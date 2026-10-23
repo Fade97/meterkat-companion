@@ -16,9 +16,10 @@ const seaShim: Plugin = { name: "sea-shim", setup: b => b.onResolve({ filter: /^
 
 rmSync(dist, { recursive: true, force: true });
 const { metafile } = await build({
-  entryPoints: { main: "src/main.ts", preload: "src/preload.ts", "register-worker": "src/register-worker.ts" },
+  entryPoints: { main: "src/main.ts", preload: "src/preload.ts", "island-preload": "src/island-preload.ts", "register-worker": "src/register-worker.ts" },
   absWorkingDir: root, bundle: true, platform: "node", format: "cjs", target: "node22", outdir: dist, outExtension: { ".js": ".cjs" },
-  external: ["electron"], plugins: [seaShim], metafile: true, logLevel: "warning",
+  // koffi (Win32 calls for the island) is a native module: copied below and loaded at runtime.
+  external: ["electron", "koffi"], plugins: [seaShim], metafile: true, logLevel: "warning",
   define: { __AI_USAGE_COMPANION_VERSION__: JSON.stringify(version) },
 });
 await build({
@@ -27,6 +28,17 @@ await build({
 });
 mkdirSync(join(dist, "renderer"), { recursive: true });
 for (const file of ["index.html", "style.css"]) cpSync(join(root, "src", "renderer", file), join(dist, "renderer", file));
+await build({
+  entryPoints: ["src/island-page/island.ts"], absWorkingDir: root, bundle: true, platform: "browser", format: "iife", target: "chrome130",
+  outfile: join(dist, "island", "island.js"), logLevel: "warning",
+});
+for (const file of ["island.html", "island.css"]) cpSync(join(root, "src", "island-page", file), join(dist, "island", file));
+
+// koffi's loader and its Windows x64 binary; electron-builder unpacks it from the asar (asarUnpack in package.json).
+const koffi = join(root, "node_modules", "koffi");
+const koffiOut = join(dist, "node_modules", "koffi");
+for (const file of ["package.json", "index.js", "indirect.js", "LICENSE.txt"]) cpSync(join(koffi, file), join(koffiOut, file));
+cpSync(join(koffi, "build", "koffi", "win32_x64", "koffi.node"), join(koffiOut, "build", "koffi", "win32_x64", "koffi.node"));
 
 // Licence texts of the npm packages bundled into dist (Electron and Chromium ship their own next to the executable).
 const packages = new Set<string>();
@@ -34,6 +46,7 @@ for (const input of Object.keys(metafile.inputs)) {
   const match = /^(.*node_modules\/(?:@[^/]+\/)?[^/]+)\//.exec(input.replaceAll("\\", "/"));
   if (match) packages.add(resolve(root, match[1]!));
 }
+packages.add(koffi); // shipped next to the bundle, not inside it
 const sections = [...packages].sort().map(dir => {
   const pkg = JSON.parse(readFileSync(join(dir, "package.json"), "utf8")) as { name: string; version: string; license?: string };
   const file = readdirSync(dir).find(name => /^(licen[cs]e|copying)(\.|$)/i.test(name));

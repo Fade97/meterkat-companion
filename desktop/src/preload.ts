@@ -22,6 +22,7 @@ const api: MeterkatApi = {
   revokeDevice: id => invoke(CHANNEL.revoke, id),
   revokeAll: () => invoke(CHANNEL.revokeAll),
   setAutostart: enabled => invoke(CHANNEL.autostart, enabled),
+  setIsland: enabled => invoke(CHANNEL.island, enabled),
   takeOver: () => invoke(CHANNEL.takeOver),
   checkUpdate: () => invoke(CHANNEL.checkUpdate),
   open: link => invoke(CHANNEL.open, link),

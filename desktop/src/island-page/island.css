@@ -1,0 +1,64 @@
+/* The island page: transparent window, the drop is the SVG outline, the content sits in a box that follows it. */
+html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+body {
+  font: 600 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Ubuntu, sans-serif;
+  -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
+  --island: #101318; --fg: #ffffff; --logo: #f5c451; --track: rgba(255, 255, 255, .16); --muted: rgba(255, 255, 255, .6);
+  --ease-out: cubic-bezier(.2, .8, .2, 1);
+}
+/* Approved brand pairs: sand mark on ink, ink mark on white (docs/brand.md). */
+body.white { --island: #ffffff; --fg: #101318; --logo: #101318; --track: rgba(16, 19, 24, .12); --muted: rgba(16, 19, 24, .55); }
+
+.shape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.shape path { fill: var(--island); transition: fill .45s ease; }
+body.white .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .22)); }
+body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
+
+.box { position: absolute; color: var(--fg); transition: color .45s ease; }
+.box > * { position: absolute; top: 50%; opacity: 0; pointer-events: none; }
+
+/* Idle: the mark, scaled in once the drop has formed. */
+.logo { left: 50%; width: 14px; height: 16px; fill: var(--logo); transform: translate(-50%, -50%) scale(.55);
+  transition: opacity .16s ease, transform .2s ease, fill .45s ease; }
+.logo.on { opacity: 1; transform: translate(-50%, -50%) scale(1); transition: opacity .28s ease .14s, transform .55s cubic-bezier(.3, 1.6, .5, 1) .14s, fill .45s ease; }
+
+/* Staggered entrance: each child slides and sharpens in after the pill has opened. */
+.usage, .notice { left: 0; right: 0; display: flex; align-items: center; transform: translateY(-50%); }
+.usage { gap: 11px; padding: 0 17px; }
+.notice { gap: 9px; padding: 0 15px 0 9px; width: max-content; }
+.usage > *, .notice > * { opacity: 0; transform: translateX(-6px) scale(.96); filter: blur(3px);
+  transition: opacity .14s ease, transform .14s ease, filter .14s ease; }
+.on { opacity: 1; }
+.on > * { opacity: 1; transform: none; filter: none; transition: opacity .32s ease, transform .5s var(--ease-out), filter .32s ease; }
+.on > :nth-child(1) { transition-delay: .17s; }
+.on > :nth-child(2) { transition-delay: .23s; }
+.on > :nth-child(3) { transition-delay: .29s; }
+
+.glyph { width: 20px; height: 20px; flex: none; fill: var(--provider); }
+.bar { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+.bar .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 4px; background: var(--provider); }
+.bar .fill.landed { animation: glow .9s ease-out; }
+@keyframes glow { 0% { filter: brightness(1.6) saturate(1.2); } 100% { filter: none; } }
+.bar .was { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); opacity: .45; }
+.pct { min-width: 44px; text-align: right; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+
+.badge { position: relative; width: 24px; height: 24px; flex: none; }
+.badge .glyph { position: absolute; inset: 5px; width: 14px; height: 14px; transition: opacity .25s ease, transform .35s var(--ease-out); }
+.ring { position: absolute; inset: 0; width: 24px; height: 24px; transform: rotate(-90deg); overflow: visible; }
+.ring circle { fill: none; stroke-width: 2.4; }
+.ring .track { stroke: var(--track); }
+.ring .arc { stroke: var(--provider); stroke-linecap: round; stroke-dasharray: 87.96; stroke-dashoffset: 87.96; transition: stroke-dashoffset .9s var(--ease-out) .3s; }
+.ring .check { fill: none; stroke: var(--provider); stroke-width: 2.6; stroke-linecap: round; stroke-linejoin: round;
+  stroke-dasharray: 16; stroke-dashoffset: 16; transform: rotate(90deg); transform-origin: 16px 16px; opacity: 0; }
+.notice.done .badge .glyph { opacity: 0; transform: scale(.6); transition-delay: .75s; }
+.notice.done .ring .check { opacity: 1; stroke-dashoffset: 0; transition: stroke-dashoffset .4s var(--ease-out) .95s, opacity .1s linear .95s; }
+.notice.urgent.on .ring { animation: urgent 1.1s ease-in-out .6s 2; }
+@keyframes urgent { 50% { transform: rotate(-90deg) scale(1.14); } }
+.text { white-space: nowrap; }
+.value { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+
+@media (prefers-reduced-motion: reduce) {
+  .usage > *, .notice > *, .on > * { filter: none !important; transform: none !important; transition-delay: 0s !important; }
+  .logo, .logo.on { transform: translate(-50%, -50%); }
+  .bar .fill.landed, .notice.urgent.on .ring { animation: none; }
+}
