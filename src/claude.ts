@@ -5,7 +5,12 @@ import { join } from "node:path";
 import { fromClaudeReport, type ProviderUsage } from "../shared/snapshot.js";
 
 /** Execute only the native local /usage command, never an inference prompt. Native CLI owns auth. */
-export function readClaudeUsage(timeoutMs = 25_000): Promise<ProviderUsage> {
+export async function readClaudeUsage(timeoutMs = 25_000): Promise<ProviderUsage> {
+  // Claude Code 2.1.309 intermittently reports `rate_limits: null` for a signed-in account; a second call has it.
+  const first = await readUsageOnce(timeoutMs);
+  return first.state === "ok" ? first : readUsageOnce(timeoutMs);
+}
+function readUsageOnce(timeoutMs: number): Promise<ProviderUsage> {
   return new Promise((resolve, reject) => {
     const directory = mkdtempSync(join(tmpdir(), "ai-usage-report-"));
     const command = process.env.AI_USAGE_CLAUDE_BIN ?? (process.platform === "win32" ? "claude.exe" : "claude");
