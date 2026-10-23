@@ -9,7 +9,7 @@
   "homepage": "https://meterkat.fabian-duerkop.de",
   "scripts": {
     "typecheck": "tsc -p tsconfig.json --noEmit",
-    "test": "tsx --test tests/snapshot.test.ts tests/protocol-v2.test.ts tests/antigravity.test.ts tests/autostart.test.ts tests/update.test.ts tests/setup.test.ts tests/confirm.test.ts tests/runtime.test.ts && tsx scripts/protocol-v2-vectors.ts --check",
+    "test": "tsx --test tests/snapshot.test.ts tests/claude.test.ts tests/protocol-v2.test.ts tests/antigravity.test.ts tests/autostart.test.ts tests/update.test.ts tests/setup.test.ts tests/confirm.test.ts tests/codex.test.ts tests/runtime.test.ts && tsx scripts/protocol-v2-vectors.ts --check",
     "meterkat": "tsx src/cli.ts",
     "bundle": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=output/ai-usage.cjs",
     "package": "tsx scripts/package.ts",

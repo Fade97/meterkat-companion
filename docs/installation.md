@@ -167,6 +167,7 @@ The install scripts also accept `install --autostart` (Linux) / `install -Autost
 - The sign-in environment does not contain overrides that were set only in the installing shell. `install` therefore writes `autostart.json` (private, in the resolved state directory) with the resolved `AI_USAGE_STATE_DIR` and, when set, `AI_USAGE_CLAUDE_BIN`/`AI_USAGE_CODEX_BIN`. `background` restores only these keys; no relay/admin tokens or other environment are stored.
 - At sign-in `background` starts a detached, hidden `run` process and exits; a short console flash is possible. A PID file in the state directory prevents a second instance within the same boot. Output goes to `companion.log` in the state directory (status lines only; restarted beyond 1 MB).
 - The Run entry inherits your user environment, so native tools on your user PATH are found. Start immediately with `"$N" "$B" background`.
+- Codex installed with npm is a `codex.js` entry point. The packaged `meterkat.exe` is not Node, so it starts that script with `node.exe` from PATH; without Node on PATH, set `AI_USAGE_CODEX_BIN` to a native `codex.exe`.
 - Reinstalling changes the next sign-in only; a companion already running keeps its previous settings until it is stopped.
 - `remove` deletes the Run value and `autostart.json`; a running companion continues until sign-out (or end `node.exe` in Task Manager). The PowerShell uninstall keeps the bundle if autostart removal fails.
 - Restrict the state folder's ACL to your user.
