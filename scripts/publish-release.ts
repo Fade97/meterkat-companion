@@ -19,7 +19,7 @@
 // The key is held in memory only. A signature that the embedded release keys cannot verify is never uploaded.
 import { createHash, createPrivateKey, sign } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
@@ -112,6 +112,8 @@ async function createDraft(tag: string, version: string, dir: string, targets: s
   const host = releaseAssetName(version, process.platform, process.arch);
   if (present.has(host)) {
     // The CI binary is not trusted yet: minimal environment, throwaway state directory, time limit.
+    // Workflow artifacts lose the executable bit; restoring it leaves the checksum unchanged.
+    if (process.platform !== "win32") chmodSync(join(dir, host), 0o755);
     const state = mkdtempSync(join(tmpdir(), "meterkat-check-"));
     try {
       const result = spawnSync(join(dir, host), ["version"], { encoding: "utf8", timeout: 60_000, env: { PATH: process.env.PATH ?? "", AI_USAGE_NO_UPDATE: "1", AI_USAGE_STATE_DIR: state, ...(process.platform === "win32" ? { SystemRoot: process.env.SystemRoot ?? "" } : {}) } });
