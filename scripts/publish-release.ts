@@ -25,7 +25,7 @@ import { homedir, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { RELEASE_PUBLIC_KEYS, verifySignature } from "../src/release-key.js";
-import { checksumFor, parseVersion, releaseAssetName, SIGNATURE_ASSET, SUMS_ASSET, TAG_PREFIX } from "../src/update.js";
+import { checksumFor, desktopAssetName, parseVersion, releaseAssetName, SIGNATURE_ASSET, SUMS_ASSET, TAG_PREFIX } from "../src/update.js";
 
 const ALL_TARGETS = ["linux-x64", "linux-arm64", "windows-x64"];
 // Secrets are taken out of the environment once, so no child process (gh, the unsigned CI binary) inherits them.
@@ -40,10 +40,6 @@ function gh(args: string[], options: { json?: boolean } = {}) {
   if (result.status !== 0) throw new Error(`gh ${args[0]} ${args[1] ?? ""} failed (${result.status})`);
   return options.json ? JSON.parse(result.stdout) : result.stdout;
 }
-
-/** Desktop app builds (desktop/), one per target that has one: an AppImage for linux-x64, an installer for windows-x64. */
-export const desktopAssetName = (version: string, target: string) =>
-  ({ "linux-x64": `meterkat-desktop-${version}-linux-x64.AppImage`, "windows-x64": `meterkat-desktop-${version}-windows-x64-setup.exe` } as Record<string, string>)[target];
 
 /** Names every release must contain for the selected targets (binaries, Linux archives and, unless left out, desktop builds). */
 export function expectedAssets(version: string, targets: string[], desktop = true) {
@@ -162,7 +158,7 @@ const releaseNotes = (version: string) => versionNotes(version) + `Single-file M
 
 - Windows: run \`meterkat-companion-${version}-windows-x64.exe setup\` from a terminal. The build is not code-signed: in SmartScreen choose **More info → Run anyway**.
 - Linux: \`tar -xzf meterkat-companion-${version}-linux-<arch>.tar.gz && ./meterkat setup\`.
-- Desktop app with a window and tray icon (optional, instead of the command line): \`meterkat-desktop-${version}-windows-x64-setup.exe\` (per-user install, no admin) or \`meterkat-desktop-${version}-linux-x64.AppImage\`. It checks for new versions; install them by downloading the new build.
+- Desktop app with a window and tray icon (optional, instead of the command line): \`meterkat-desktop-${version}-windows-x64-setup.exe\` (per-user install, no admin) or \`meterkat-desktop-${version}-linux-x64.AppImage\`. It updates itself from these releases after the same signature check.
 
 Installed companions update themselves after checking the Ed25519 signature on SHA256SUMS. To verify by hand: \`sha256sum -c SHA256SUMS --ignore-missing\`; the signature check is described in [docs/installation.md](https://github.com/Fade97/meterkat-companion/blob/main/docs/installation.md#verify-a-download-by-hand). Build provenance: \`gh attestation verify <file> -R Fade97/meterkat-companion\`.
 

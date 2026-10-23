@@ -30,6 +30,9 @@ export const osName = (platform: NodeJS.Platform) => platform === "win32" ? "win
 /** Release asset for one platform, e.g. meterkat-companion-1.0.0-windows-x64.exe; shared with the packaging script. */
 export const releaseAssetName = (version: string, platform: NodeJS.Platform = process.platform, arch: string = process.arch) =>
   `meterkat-companion-${version}-${osName(platform)}-${arch}${platform === "win32" ? ".exe" : ""}`;
+/** Desktop app builds (desktop/), one per target that has one: an AppImage for linux-x64, an installer for windows-x64. */
+export const desktopAssetName = (version: string, target: string) =>
+  ({ "linux-x64": `meterkat-desktop-${version}-linux-x64.AppImage`, "windows-x64": `meterkat-desktop-${version}-windows-x64-setup.exe` } as Record<string, string>)[target];
 
 type Version = { core: [number, number, number]; pre: string };
 export function parseVersion(value: string): Version | undefined {
@@ -220,6 +223,31 @@ export async function checkForUpdate(fetchImpl: Fetch = fetch, current = COMPANI
 /** A version that failed its start check or was rolled back is not retried automatically; a newer one is. */
 export function skipVersion(version: string) { writeState("update.json", { ...updateSettings(), skipped: version }); }
 
+/**
+ * Downloads release asset `name` to `file` (created exclusively) and checks it: SHA256SUMS must carry a valid
+ * Ed25519 signature by a trusted key, and the file must match its signed checksum, its size and GitHub's digest.
+ * A file that fails any check is deleted; the checksum list and signature never outlive the call.
+ */
+export async function downloadVerified(fetchImpl: Fetch, release: Release, name: string, file: string, keys: readonly string[] = RELEASE_PUBLIC_KEYS) {
+  const find = (n: string) => release.assets.find(a => a.name === n);
+  const asset = find(name); const sums = find(SUMS_ASSET); const signature = find(SIGNATURE_ASSET);
+  if (!asset || !sums || !signature) throw new Error(`Release ${release.version} has no signed ${name}; not installing it.`);
+  const sumsFile = `${file}.sums`; const signatureFile = `${file}.sig`;
+  try {
+    const sumsDigest = await download(fetchImpl, sums, sumsFile, MAX_SMALL_BYTES);
+    await download(fetchImpl, signature, signatureFile, MAX_SMALL_BYTES);
+    if (sums.digest && sums.digest !== `sha256:${sumsDigest}`) throw new Error("Checksum list does not match its published digest");
+    const sumsData = readFileSync(sumsFile);
+    if (!verifySignature(sumsData, readFileSync(signatureFile, "utf8"), keys)) throw new Error("Release signature is missing or invalid; update refused");
+    const expected = checksumFor(sumsData.toString("utf8"), name);
+    if (!expected) throw new Error(`Checksum list has no entry for ${name}`);
+    const actual = await download(fetchImpl, asset, file);
+    if (actual !== expected || (asset.digest && asset.digest !== `sha256:${actual}`)) throw new Error("Checksum mismatch; update discarded");
+  } catch (error) {
+    rmSync(file, { force: true }); throw error;
+  } finally { rmSync(sumsFile, { force: true }); rmSync(signatureFile, { force: true }); }
+}
+
 export type UpdateOptions = { fetch?: Fetch; runner?: Runner; current?: string; platform?: NodeJS.Platform; arch?: string; prerelease?: boolean; keys?: readonly string[]; automatic?: boolean };
 export async function update(target: string, options: UpdateOptions = {}): Promise<UpdateResult> {
   const fetchImpl = options.fetch ?? fetch; const current = options.current ?? COMPANION_VERSION;
@@ -229,24 +257,9 @@ export async function update(target: string, options: UpdateOptions = {}): Promi
   if (!newer) return { status: "current", version: current, message: `Companion ${current} is up to date.` };
   if (options.automatic && updateSettings().skipped === release.version) return { status: "current", version: current, message: `Companion ${release.version} was rolled back earlier; staying on ${current}.` };
   const name = releaseAssetName(release.version, options.platform, options.arch);
-  const find = (n: string) => release.assets.find(a => a.name === n);
-  const asset = find(name); const sums = find(SUMS_ASSET); const signature = find(SIGNATURE_ASSET);
-  if (!asset || !sums || !signature) return { status: "unavailable", version: current, message: `Release ${release.version} has no signed ${name}; not installing it.` };
+  if (![name, SUMS_ASSET, SIGNATURE_ASSET].every(n => release.assets.some(a => a.name === n))) return { status: "unavailable", version: current, message: `Release ${release.version} has no signed ${name}; not installing it.` };
   const { staged } = sidePaths(target);
-  const sumsFile = `${staged}.sums`; const signatureFile = `${staged}.sig`;
-  try {
-    const sumsDigest = await download(fetchImpl, sums, sumsFile, MAX_SMALL_BYTES);
-    await download(fetchImpl, signature, signatureFile, MAX_SMALL_BYTES);
-    if (sums.digest && sums.digest !== `sha256:${sumsDigest}`) throw new Error("Checksum list does not match its published digest");
-    const sumsData = readFileSync(sumsFile);
-    if (!verifySignature(sumsData, readFileSync(signatureFile, "utf8"), options.keys ?? RELEASE_PUBLIC_KEYS)) throw new Error("Release signature is missing or invalid; update refused");
-    const expected = checksumFor(sumsData.toString("utf8"), name);
-    if (!expected) throw new Error(`Checksum list has no entry for ${name}`);
-    const actual = await download(fetchImpl, asset, staged);
-    if (actual !== expected || (asset.digest && asset.digest !== `sha256:${actual}`)) throw new Error("Checksum mismatch; update discarded");
-  } catch (error) {
-    rmSync(staged, { force: true }); throw error;
-  } finally { rmSync(sumsFile, { force: true }); rmSync(signatureFile, { force: true }); }
+  await downloadVerified(fetchImpl, release, name, staged, options.keys);
   const status = swapExecutable(target, staged, release.version, options.runner, options.platform);
   if (status !== "updated") skipVersion(release.version);
   return status === "updated"

@@ -112,11 +112,21 @@ function settingsView() {
   const serviceText = autostart.service ? `The CLI companion is also set up to start at sign-in${running ? " and is syncing right now" : ""}.` : "The CLI companion is syncing in the background right now.";
   const service = autostart.service || running ? `<div class="notice"><p>${serviceText} Two companions would send the same data twice.</p><button class="btn" data-action="take-over">Let the app sync instead</button></div>` : "";
   const start = autostart.supported ? `<div class="card row"><div><div>Start at sign-in</div><div class="muted small">Opens hidden in the tray and keeps your phone up to date.</div></div>${toggle("autostart", autostart.app, "Start at sign-in")}</div>` : "";
-  const latest = update.newer ? `Meterkat ${esc(update.latest)} is available.` : update.latest ? "You have the latest version." : update.error ? `<span class="error">${esc(update.error)}</span>` : "Not checked yet.";
+  const latest = update.ready ? `Meterkat ${esc(update.ready)} is ready. It installs when you restart Meterkat${update.automatic ? " or close this window" : ""}.`
+    : update.downloading ? `Downloading Meterkat ${esc(update.latest)}…`
+    : update.error ? `<span class="error">${esc(update.error)}</span>`
+    : update.newer ? `Meterkat ${esc(update.latest)} is available.` : update.latest ? "You have the latest version." : "Not checked yet.";
+  const updateButton = update.ready ? `<button class="btn primary" data-action="install-update">Restart to update</button>`
+    : update.downloading || updateBusy ? `<button class="btn" disabled><span class="spinner"></span></button>`
+    : update.newer && update.install === "auto" ? `<button class="btn primary" data-action="install-update">Update now</button>`
+    : update.newer ? `<button class="btn primary" data-action="download">Download</button>`
+    : `<button class="btn" data-action="check-update">Check now</button>`;
+  const automatic = update.install === "auto" ? `<div class="card row"><div><div>Install updates automatically</div><div class="muted small">Signed releases only. Meterkat restarts by itself while it is in the tray.</div></div>${toggle("automatic-updates", update.automatic, "Install updates automatically")}</div>` : "";
   return `<h2>Startup</h2>${service}${start}
     <h2>Updates</h2>
     <div class="card"><div class="row"><div><div>Version ${esc(state.version)}</div><div class="muted small">${latest}</div></div>
-      ${update.newer ? `<button class="btn primary" data-action="download">Download</button>` : `<button class="btn" data-action="check-update" ${updateBusy ? "disabled" : ""}>${updateBusy ? `<span class="spinner"></span>` : "Check now"}</button>`}</div></div>
+      ${updateButton}</div></div>
+    ${automatic}
     <h2>Relay</h2>
     <div class="card"><div class="small selectable">${esc(registration?.relay ?? "Not registered")}</div><div class="muted small">End-to-end encrypted: the relay only ever sees ciphertext. The key stays on this computer and your paired phones.</div></div>
     ${settingsError ? `<p class="error small">${esc(settingsError)}</p>` : ""}
@@ -207,6 +217,7 @@ document.addEventListener("click", event => {
       case "revoke-all": try { if (await api.revokeAll()) await loadPhones(); } catch (error) { phonesError = message(error); render(); } break;
       case "take-over": try { await api.takeOver(); } catch (error) { settingsError = message(error); render(); } break;
       case "check-update": updateBusy = true; render(); try { await api.checkUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
+      case "install-update": updateBusy = true; render(); try { await api.installUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
       case "download": await api.open("releases"); break;
       case "quit": api.quit(); break;
       case "to-relay": step = "relay"; render(); break;
@@ -225,6 +236,7 @@ document.addEventListener("change", event => {
   const target = event.target as HTMLInputElement;
   if (target.dataset.action === "relay-choice") { customRelay = target.value === "custom"; setupError = null; render(); document.querySelector<HTMLInputElement>("#relay-url")?.focus(); }
   if (target.dataset.action === "setup-autostart") setupAutostart = target.checked;
+  if (target.dataset.action === "automatic-updates") void api.setAutomaticUpdates(target.checked).catch(error => { settingsError = message(error); render(); });
   if (target.dataset.action === "autostart") void api.setAutostart(target.checked).catch(error => { settingsError = message(error); render(); });
 });
 

@@ -12,17 +12,19 @@ import { detectProviders } from "../../src/providers.js";
 import { defaultRelay } from "../../src/registration.js";
 import { isV2, pairingLinkV2, uploadV2, writerCall, type V2Config } from "../../src/relay-v2.js";
 import { readState, relayUrl, stateDirectory, writeState, type Config } from "../../src/state.js";
-import { checkForUpdate } from "../../src/update.js";
+import { automaticUpdates, checkForUpdate, compareVersions, setAutomatic, updateSettings, type Release } from "../../src/update.js";
 import { COMPANION_VERSION } from "../../src/version.js";
 import { trayLines } from "./format.js";
 import { CHANNEL, type AppState, type Device, type ExternalLink, type Pairing, type SyncMode, type View } from "./ipc.js";
 import { autostartFile, HIDDEN_ARG, launchCommand, linuxAutostart, LOGIN_ITEM_NAME } from "./login-item.js";
+import { cleanUp, installation, launch, prepare, spawnDetached, UPDATED_ARG, VERSION_ARG, type Prepared } from "./self-update.js";
 import { backgroundPid, cliServiceRunning } from "./service.js";
 import { loginShellPath, mergePath } from "./shell-path.js";
 
 const SYNC_INTERVAL_MS = 60_000;
 const MIN_SYNC_GAP_MS = 20_000;
 const UPDATE_INTERVAL_MS = 24 * 60 * 60 * 1000;
+const UPDATE_RETRY_MS = 60 * 60 * 1000;
 const PAIRING_MS = 300_000;
 const LINKS: Record<Exclude<ExternalLink, "licenses">, string> = {
   releases: "https://github.com/Fade97/meterkat-companion/releases",
@@ -30,20 +32,34 @@ const LINKS: Record<Exclude<ExternalLink, "licenses">, string> = {
   terms: "https://meterkat.fabian-duerkop.de/terms",
   privacy: "https://meterkat.fabian-duerkop.de/privacy",
 };
-type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number };
+type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean };
 
 const assets = join(app.getAppPath(), "assets");
 let win: BrowserWindow | null = null;
+/** The window is shown or about to be (it appears only once its page is ready). */
+let windowOpen = false;
 let tray: Tray | null = null;
 let quitting = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let pairingTimer: NodeJS.Timeout | null = null;
-const sync: AppState["sync"] = { mode: "app", running: false, lastSuccess: null, error: null };
-const update: AppState["update"] = { latest: null, newer: false, checkedAt: null, error: null };
-let serviceInstalled = false;
-
 const settings = () => readState<DesktopSettings>("desktop.json") ?? {};
 const saveSettings = (patch: DesktopSettings) => writeState("desktop.json", { ...settings(), ...patch });
+const sync: AppState["sync"] = { mode: "app", running: false, lastSuccess: null, error: null };
+const install = installation(process.env, process.platform, process.arch, process.execPath, app.isPackaged);
+const update: AppState["update"] = { latest: null, newer: false, checkedAt: null, error: null, ...lastCheck(), install: install.kind === "manual" ? "manual" : "auto", automatic: true, downloading: false, ready: null };
+let release: Release | null = null;
+let lastAttempt = 0;
+let prepared: Prepared | null = null;
+let preparing: Promise<Prepared> | null = null;
+let relaunch: ReturnType<typeof launch> | null = null;
+let serviceInstalled = false;
+
+/** The last check survives a restart, so a freshly updated app does not claim it never checked. */
+function lastCheck() {
+  const { updateLatest: latest, updateCheckedAt: checkedAt } = settings();
+  try { return latest && checkedAt ? { latest, checkedAt, newer: compareVersions(latest, COMPANION_VERSION) > 0 } : {}; } catch { return {}; }
+}
+
 const config = () => readState<Config>("config.json");
 function v2Config(): V2Config {
   const current = config();
@@ -92,7 +108,7 @@ function state(): AppState {
     // The service writes snapshot.json before every upload; that is the app's only view of its progress.
     sync: sync.mode === "service" ? { ...sync, lastSuccess: data?.generatedAt ?? null } : { ...sync },
     autostart: { supported: autostart.supported, app: autostart.enabled, service: serviceInstalled },
-    update: { ...update },
+    update: { ...update, automatic: automaticUpdates() },
   };
 }
 
@@ -124,27 +140,83 @@ async function tick() {
   if (syncTimer) clearTimeout(syncTimer);
   refreshEnvironment();
   if (sync.mode === "app") await syncOnce(); else changed();
-  if (process.env.AI_USAGE_NO_UPDATE !== "1" && (settings().updateCheckedAt ?? 0) < Date.now() - UPDATE_INTERVAL_MS) void checkUpdate(false);
+  // A newer version known from before a restart is fetched again right away; failed checks retry hourly.
+  const due = (settings().updateCheckedAt ?? 0) < Date.now() - UPDATE_INTERVAL_MS || (update.newer && !release);
+  if (process.env.AI_USAGE_NO_UPDATE !== "1" && due && !preparing && Date.now() - lastAttempt > UPDATE_RETRY_MS) void checkUpdate(false);
+  // A downloaded update restarts the app only while it sits in the tray; with the window open it waits.
+  if (prepared && automaticUpdates() && !windowOpen && !sync.running) return restartToUpdate();
   syncTimer = setTimeout(() => void tick(), SYNC_INTERVAL_MS);
 }
 
 // ---- Updates ---------------------------------------------------------------------------------------------------
 
-/** Release check only. Installing a desktop build is a download for now; the CLI keeps its signed self-update. */
+/** Daily check. With automatic updates on, a newer release is downloaded and verified in the background. */
 async function checkUpdate(manual: boolean) {
+  lastAttempt = Date.now();
   try {
-    const { release, newer } = await checkForUpdate(fetch, COMPANION_VERSION);
-    Object.assign(update, { latest: release?.version ?? null, newer, checkedAt: Date.now(), error: null });
-    saveSettings({ updateCheckedAt: Date.now() });
-    if (newer && release && settings().notifiedVersion !== release.version && Notification.isSupported()) {
-      saveSettings({ notifiedVersion: release.version });
-      const note = new Notification({ title: `Meterkat ${release.version} is available`, body: "Open the download page from the tray menu or the settings." });
-      note.on("click", () => void shell.openExternal(LINKS.releases)); note.show();
+    const result = await checkForUpdate(fetch, COMPANION_VERSION);
+    release = result.release ?? null;
+    Object.assign(update, { latest: release?.version ?? null, newer: result.newer, checkedAt: Date.now(), error: null });
+    saveSettings({ updateCheckedAt: Date.now(), updateLatest: release?.version });
+    if (!result.newer || !release) return;
+    // A version that failed its start check is not retried automatically; a newer one is.
+    if (update.install === "auto" && automaticUpdates() && updateSettings().skipped !== release.version) {
+      await download(release);
+      if (windowOpen) notifyOnce(release.version, `Meterkat ${release.version} is ready`, "It installs when you close the window, or choose Restart to update.", () => showWindow("settings"));
+      else void tick();
+    } else if (update.install === "auto") {
+      notifyOnce(release.version, `Meterkat ${release.version} is available`, "Open the settings to update.", () => showWindow("settings"));
+    } else {
+      notifyOnce(release.version, `Meterkat ${release.version} is available`, "Open the download page from the tray menu or the settings.", () => void shell.openExternal(LINKS.releases));
     }
   } catch (error) {
     Object.assign(update, { checkedAt: Date.now(), error: error instanceof Error ? error.message : "Update check failed" });
     if (manual) throw error;
   } finally { changed(); }
+}
+
+function notifyOnce(version: string, title: string, body: string, click: () => void) {
+  if (settings().notifiedVersion === version || !Notification.isSupported()) return;
+  saveSettings({ notifiedVersion: version });
+  const note = new Notification({ title, body });
+  note.on("click", click); note.show();
+}
+
+/** Downloads and verifies a release once; an AppImage is already swapped in when this resolves. */
+async function download(next: Release) {
+  if (prepared && compareVersions(prepared.version, next.version) >= 0) return prepared;
+  if (preparing) return preparing;
+  update.downloading = true; update.error = null; changed();
+  preparing = prepare(next, install, join(app.getPath("userData"), "updates"));
+  try {
+    prepared = await preparing; update.ready = prepared.version;
+    return prepared;
+  } finally { preparing = null; update.downloading = false; changed(); }
+}
+
+/** "Update now": downloads if needed (also a version skipped by automatic checks), then restarts. */
+async function installUpdate() {
+  try {
+    if (!prepared) {
+      if (!release || !update.newer) await checkUpdate(true);
+      if (!release || !update.newer) return;
+      await download(release);
+    }
+    restartToUpdate();
+  } catch (error) {
+    update.error = error instanceof Error ? error.message : "Update failed"; changed();
+    throw error;
+  }
+}
+
+/** Quits and starts the new version: the swapped AppImage, or the installer, which restarts the app itself. */
+function restartToUpdate() {
+  if (!prepared) return;
+  const hidden = !windowOpen;
+  // The installer starts the app without arguments; this decides whether it comes back hidden.
+  if (prepared.kind === "nsis") saveSettings({ relaunchHidden: hidden });
+  relaunch = launch(prepared, hidden, process.argv.slice(1));
+  app.quit();
 }
 
 // ---- Registration, pairing, phones -----------------------------------------------------------------------------
@@ -217,23 +289,24 @@ function createWindow(show: boolean) {
   win.removeMenu();
   win.on("close", event => { if (!quitting) { event.preventDefault(); collapse(); } });
   win.on("minimize", () => collapse());
-  win.on("closed", () => { win = null; });
+  win.on("closed", () => { win = null; windowOpen = false; });
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", event => event.preventDefault());
   void win.loadFile(join(__dirname, "renderer", "index.html"));
+  windowOpen = show;
   if (show) win.once("ready-to-show", () => win?.show());
 }
 
 function showWindow(view?: View) {
   if (!win) createWindow(false);
   if (win!.isMinimized()) win!.restore();
-  win!.show(); win!.focus();
+  win!.show(); win!.focus(); windowOpen = true;
   if (view) win!.webContents.send(CHANNEL.navigate, view);
 }
 
 function collapse() {
   if (!win || win.isDestroyed()) return;
-  stopPairing(); win.webContents.send(CHANNEL.navigate, "overview"); win.hide();
+  stopPairing(); win.webContents.send(CHANNEL.navigate, "overview"); win.hide(); windowOpen = false;
   if (!settings().trayHintShown && Notification.isSupported()) {
     saveSettings({ trayHintShown: true });
     new Notification({ title: "Meterkat keeps running", body: "It syncs in the background. Open it from the tray icon, or choose Quit there." }).show();
@@ -257,11 +330,20 @@ function buildTray(current: AppState) {
     { label: "Connect a phone…", enabled: current.registration?.protocol === 2, click: () => showWindow("phones") },
     { type: "separator" },
     ...(current.autostart.supported ? [{ label: "Start at sign-in", type: "checkbox" as const, checked: current.autostart.app, click: (item: Electron.MenuItem) => { try { appAutostart().set(item.checked); } finally { changed(); } } }] : []),
-    ...(current.update.newer ? [{ label: `Download Meterkat ${current.update.latest}`, click: () => void shell.openExternal(LINKS.releases) }] : []),
+    ...updateItems(current.update),
     { type: "separator" },
     { label: "Quit Meterkat", click: () => app.quit() },
   ];
   tray.setContextMenu(Menu.buildFromTemplate(items));
+}
+
+function updateItems(state: AppState["update"]): MenuItemConstructorOptions[] {
+  if (state.ready) return [{ label: `Restart to update to ${state.ready}`, click: () => restartToUpdate() }];
+  if (state.downloading) return [{ label: `Downloading Meterkat ${state.latest}…`, enabled: false }];
+  if (!state.newer) return [];
+  return state.install === "auto"
+    ? [{ label: `Update to Meterkat ${state.latest}`, click: () => void installUpdate().catch(() => undefined) }]
+    : [{ label: `Download Meterkat ${state.latest}`, click: () => void shell.openExternal(LINKS.releases) }];
 }
 
 // ---- IPC -------------------------------------------------------------------------------------------------------
@@ -287,6 +369,8 @@ function registerIpc() {
   handle(CHANNEL.autostart, (enabled: unknown) => { try { appAutostart().set(enabled === true); } finally { changed(); } });
   handle(CHANNEL.takeOver, () => takeOver());
   handle(CHANNEL.checkUpdate, () => checkUpdate(true));
+  handle(CHANNEL.installUpdate, () => installUpdate());
+  handle(CHANNEL.automaticUpdates, (enabled: unknown) => { try { setAutomatic(enabled === true); } finally { changed(); } });
   handle(CHANNEL.open, (link: unknown) => {
     if (link === "licenses") return shell.openPath(join(process.resourcesPath, "THIRD_PARTY_NOTICES.txt"));
     const url = LINKS[link as keyof typeof LINKS];
@@ -299,20 +383,33 @@ function registerIpc() {
 
 // ---- Start -----------------------------------------------------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (process.argv.includes(VERSION_ARG)) {
+  // Start check of a staged AppImage (self-update.ts): answer and leave before any window, tray or lock.
+  process.stdout.write(`${COMPANION_VERSION}\n`); app.exit(0);
+} else if (!app.requestSingleInstanceLock()) app.quit();
 else {
   app.setName("Meterkat");
   if (process.platform === "win32") app.setAppUserModelId("de.fabian-duerkop.meterkat");
   app.on("second-instance", () => showWindow());
   app.on("before-quit", () => { quitting = true; });
+  app.on("will-quit", () => {
+    if (!relaunch) return;
+    // The new instance must get the lock, or it would hand over to this exiting one and quit.
+    app.releaseSingleInstanceLock();
+    spawnDetached(relaunch, process.platform, homedir());
+  });
   // Closing the window only hides it; the app lives in the tray until Quit.
   app.on("window-all-closed", () => undefined);
   void app.whenReady().then(() => {
     if (process.platform === "linux") process.env.PATH = mergePath(process.env.PATH, loginShellPath());
     Menu.setApplicationMenu(null);
     registerIpc();
-    // Autostart starts hidden; an unregistered companion always opens its setup.
-    createWindow(!process.argv.includes(HIDDEN_ARG) || !config());
+    // Autostart starts hidden, and so does an update started from the tray; an unregistered companion always opens its setup.
+    const hidden = process.argv.includes(HIDDEN_ARG) || (process.argv.includes(UPDATED_ARG) && settings().relaunchHidden === true);
+    createWindow(!hidden || !config());
+    // The installer may still be finishing when it starts the app, so its download goes a little later
+    // (unless the next update is already on its way).
+    setTimeout(() => { if (!prepared && !preparing) cleanUp(install, join(app.getPath("userData"), "updates")); }, 30_000);
     buildTray(state());
     void tick();
   });
