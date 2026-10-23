@@ -434,6 +434,7 @@ else {
     island = createIsland({
       snapshot, enabled: islandEnabled, mode: barMode, demo: process.env.METERKAT_ISLAND_DEMO === "1",
       preload: join(__dirname, "island-preload.cjs"), page: join(__dirname, "island", "island.html"),
+      probeWorker: join(__dirname, "foreground-worker.cjs"),
     });
     island.start();
     buildTray(state());

@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
-import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseWindowProps, unsupportedReason } from "../src/foreground.js";
+import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseWindowProps, threadedProbe, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
-import { hits, islandFootprint, islandPath, ISLAND_SIZES, samplePoints } from "../src/island-shape.js";
+import { hits, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, samplePoints } from "../src/island-shape.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60_000;
@@ -48,6 +48,23 @@ const provider = (id: string, five: number, resetsAt: number, state: ProviderUsa
   ({ id, state, sampledAt: now, windows: { fiveHour: { usedPercent: five, resetsAt } } });
 const snap = (...providers: ProviderUsage[]): Snapshot => ({ schemaVersion: 1, sequence: 1, generatedAt: now, providers });
 const kinds = (events: IslandEvent[]) => events.map(e => e.kind === "usage" ? `usage ${e.provider} ${e.from}->${e.to}` : `${e.kind} ${e.provider}`);
+
+test("a press that reaches the drop before the window takes the pointer still counts as a click", () => {
+  const missed = missedClicks();
+  // Pressed on arrival while the window still let the pointer through, released on the island.
+  assert.equal(missed(false, false, false), false);
+  assert.equal(missed(true, true, false), false);
+  assert.equal(missed(true, true, true), false);
+  assert.equal(missed(false, true, true), true);
+  // Pressed while the window already took the pointer: the page sees that click itself.
+  assert.equal(missed(true, true, true), false);
+  assert.equal(missed(false, true, true), false);
+  // Released off the island, or pressed elsewhere and dragged onto it: no click.
+  assert.equal(missed(true, true, false), false);
+  assert.equal(missed(false, false, true), false);
+  assert.equal(missed(true, false, false), false);
+  assert.equal(missed(false, true, true), false);
+});
 
 test("usage is announced after a jump of 10 points or when it crosses 50, 75 or 90 %", () => {
   const t = new IslandTracker(), reset = now + 5 * 3_600_000;
@@ -168,4 +185,42 @@ test("brightness is sampled beside the widest shape, never under it", () => {
   const half = Math.max(...Object.values(ISLAND_SIZES).map(size => islandFootprint({ cx: 0, ...size }))) / 2;
   assert.equal(points.length, 8);
   assert.ok(points.every(p => Math.abs(p.x - (1920 + 960)) > half && p.y >= 0 && p.y < 20));
+});
+
+/** A worker that answers like foreground-worker.ts, in screen pixels at a scale of 2. */
+function fakeWorker(answer: (request: ProbeRequest) => unknown) {
+  const listeners: Record<string, ((value: any) => void)[]> = {};
+  const worker: ProbeWorker & { emit(event: string, value: unknown): void; requests: ProbeRequest[] } = {
+    requests: [],
+    postMessage(request) { this.requests.push(request); queueMicrotask(() => listeners.message?.forEach(l => l({ id: request.id, ok: true, result: answer(request) } satisfies ProbeResponse))); },
+    on(event: string, listener: (value: any) => void) { (listeners[event] ??= []).push(listener); return worker; },
+    terminate() { return undefined; },
+    emit(event, value) { listeners[event]?.forEach(l => l(value)); },
+  };
+  return worker;
+}
+const half = (p: { x: number; y: number }) => ({ x: p.x / 2, y: p.y / 2 }), double = (p: { x: number; y: number }) => ({ x: p.x * 2, y: p.y * 2 });
+const noFallback = (): ForegroundProbe => { throw new Error("fallback used"); };
+
+test("the threaded probe converts between DIP and the worker's screen pixels", async () => {
+  const worker = fakeWorker(request => request.op === "read"
+    ? { window: { app: "claude.exe", title: "Claude", descendants: [], fullscreen: false }, anchor: { x: 1920, y: 80 }, pid: 7 }
+    : request.points.map(p => p.x / 10_000));
+  const probe = threadedProbe(() => worker, half, double, noFallback);
+  assert.deepEqual((await probe.read())?.anchor, { x: 960, y: 40 });
+  assert.deepEqual(await probe.luminance([{ x: 1000, y: 3 }], 1), [0.2]);
+  assert.deepEqual(worker.requests[1], { op: "luminance", points: [{ x: 2000, y: 6 }], id: 2 });
+});
+
+test("the threaded probe falls back to the main thread when the worker dies", async () => {
+  const worker = fakeWorker(() => null);
+  worker.postMessage = function (request) { this.requests.push(request); };
+  const local: ForegroundProbe = { read: async () => null, luminance: async points => points.map(() => 0.5) };
+  const probe = threadedProbe(() => worker, half, double, () => local);
+  const pending = probe.read();
+  worker.emit("error", new Error("koffi missing"));
+  await assert.rejects(pending, /koffi missing/);
+  assert.deepEqual(await probe.luminance([{ x: 1, y: 1 }], 1), [0.5]);
+  assert.deepEqual(await probe.luminance([{ x: 1, y: 1 }], 1), [0.5]);
+  assert.equal(worker.requests.length, 1);
 });

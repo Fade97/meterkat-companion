@@ -3,18 +3,19 @@
 // The window takes the pointer only while it is on the drop (or the open panel); a click opens the panel with every
 // provider, and it closes when clicked again or once the pointer has left it.
 import { BrowserWindow, desktopCapturer, ipcMain, screen, type Display, type IpcMainEvent } from "electron";
+import { Worker } from "node:worker_threads";
 import type { Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow } from "./ai-apps.js";
-import { linuxProbe, nextTone, unsupportedReason, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type ScreenCapture } from "./foreground.js";
+import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryButton, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type ScreenCapture } from "./foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
 import type { BarMode } from "./format.js";
-import { hits, PANEL_MAX_HEIGHT, samplePoints, type HitArea } from "./island-shape.js";
+import { hits, missedClicks, PANEL_MAX_HEIGHT, samplePoints, type HitArea } from "./island-shape.js";
 import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
 /** Tall enough for the open panel; everything outside the drop lets the pointer through. */
 export const ISLAND_WINDOW = { width: 440, height: PANEL_MAX_HEIGHT + 24 };
-/** How often the pointer is checked while the island is on screen. */
-const POINTER_MS = 50;
+/** How often the pointer is checked while the island is on screen; until then a press on arrival goes to the window below. */
+const POINTER_MS = 25;
 /** The panel closes once the pointer has been off it this long. */
 const LEAVE_MS = 900;
 const POLL_MS = 1000;
@@ -32,6 +33,8 @@ export type IslandOptions = {
   mode: () => BarMode;
   preload: string;
   page: string;
+  /** foreground-worker.cjs: the Win32 probe runs there so it cannot stall the pointer tracking. */
+  probeWorker: string;
   /** Pretends an AI tool is in front and cycles sample announcements (METERKAT_ISLAND_DEMO=1). */
   demo: boolean;
 };
@@ -49,27 +52,34 @@ export function createIsland(options: IslandOptions) {
   let busyUntil = 0, quietUntil = 0, toneAt = 0, eventsAt = 0, nextId = 1, demoStep = 0, invisibleSince = 0;
   let timer: NodeJS.Timeout | null = null, polling = false, stopped = true;
   let pointer: NodeJS.Timeout | null = null, area: HitArea | null = null, hover = false, expanded = false, insideAt = 0;
+  const missed = missedClicks();
 
   function createProbe(): ForegroundProbe {
     if (process.platform === "win32") {
-      const koffi = require("koffi") as KoffiModule;
-      return windowsProbe(koffi, rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point));
+      const local = () => windowsProbe(require("koffi") as KoffiModule, rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point));
+      return threadedProbe(() => new Worker(options.probeWorker), point => screen.screenToDipPoint(point), point => screen.dipToScreenPoint(point), local);
     }
     return linuxProbe(capture, cursor);
   }
 
-  /** The pointer in DIP. Windows reports it live; X11 is asked directly (see x11Pointer). */
-  let x11: (() => Point | null) | null | undefined;
-  function cursor(): Point {
+  /** The pointer in DIP and whether the primary button is held. Windows reports the point live; X11 is asked directly (see x11Pointer). */
+  let x11: ReturnType<typeof x11Pointer> | null | undefined;
+  let button: (() => boolean) | null | undefined;
+  function pointerState(): { point: Point; pressed: boolean } {
     if (process.platform === "linux" && x11 === undefined) {
       try { x11 = x11Pointer(require("koffi") as KoffiModule); } catch (error) {
         x11 = null;
         console.warn(`Meterkat island: cannot read the pointer from X11 (${error instanceof Error ? error.message : error})`);
       }
     }
-    const point = x11?.();
-    return point ? screen.screenToDipPoint(point) : screen.getCursorScreenPoint();
+    if (process.platform === "win32" && button === undefined) {
+      try { button = windowsPrimaryButton(require("koffi") as KoffiModule); } catch { button = null; }
+    }
+    const x = x11?.();
+    if (x) return { point: screen.screenToDipPoint(x), pressed: x.primary };
+    return { point: screen.getCursorScreenPoint(), pressed: button?.() ?? false };
   }
+  const cursor = () => pointerState().point;
 
   const capture: ScreenCapture = async displayId => {
     const target = screen.getAllDisplays().find(d => d.id === displayId);
@@ -141,11 +151,14 @@ export function createIsland(options: IslandOptions) {
 
   function track() {
     if (!win || win.isDestroyed() || hidden) return;
-    const now = Date.now();
-    const inside = visible && hits(win.getBounds(), area, cursor());
+    const now = Date.now(), { point, pressed } = pointerState();
+    const inside = visible && hits(win.getBounds(), area, point);
+    // Compared with the pointer state before this poll: was the window still letting the press through?
+    const click = missed(pressed, inside, hover);
     if (inside !== hover) { hover = inside; win.setIgnoreMouseEvents(!inside); send(); }
     if (inside) insideAt = now;
     else if (expanded && now - insideAt > LEAVE_MS) setExpanded(false);
+    if (click) setExpanded(!expanded);
   }
 
   const fromPage = (event: IpcMainEvent) => !!win && !win.isDestroyed() && event.sender === win.webContents;
@@ -254,6 +267,7 @@ export function createIsland(options: IslandOptions) {
       if (pointer) clearInterval(pointer); pointer = null;
       ipcMain.off(ISLAND_HIT_CHANNEL, onHitArea); ipcMain.off(ISLAND_TOGGLE_CHANNEL, onToggle);
       if (win && !win.isDestroyed()) win.destroy(); win = null;
+      probe?.close?.(); probe = null;
     },
   };
 }

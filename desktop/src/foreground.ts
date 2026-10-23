@@ -17,6 +17,62 @@ export interface ForegroundProbe {
   read(): Promise<ForegroundReading | null>;
   /** Relative luminance (0–1) per screen point in DIP; null where it cannot be read. */
   luminance(points: Point[], displayId: number): Promise<(number | null)[]>;
+  close?(): void;
+}
+
+export type ProbeRequest = { id: number; op: "read" } | { id: number; op: "luminance"; points: Point[] };
+export type ProbeResponse = { id: number; ok: true; result: unknown } | { id: number; ok: false; error: string };
+/** The part of a worker_threads Worker the threaded probe uses. */
+export interface ProbeWorker {
+  postMessage(request: ProbeRequest): void;
+  on(event: "message", listener: (response: ProbeResponse) => void): unknown;
+  on(event: "error" | "exit", listener: (reason: unknown) => void): unknown;
+  terminate(): unknown;
+}
+
+/**
+ * A probe running in a worker (foreground-worker.ts) in screen pixels, converted to DIP here. Should the worker fail
+ * to start or die, requests go to `fallback` instead, on this thread.
+ */
+export function threadedProbe(start: () => ProbeWorker, toDip: (point: Point) => Point, toScreen: (point: Point) => Point, fallback: () => ForegroundProbe): ForegroundProbe {
+  const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
+  let worker: ProbeWorker | null = null, local: ForegroundProbe | null = null, nextId = 1;
+  const fail = (reason: unknown) => {
+    if (!worker) return;
+    const message = reason instanceof Error ? reason.message : `worker stopped (${String(reason)})`;
+    console.warn(`Meterkat island: foreground probe runs on the main thread (${message})`);
+    worker = null;
+    for (const { reject } of pending.values()) reject(new Error(message));
+    pending.clear();
+  };
+  try {
+    worker = start();
+    worker.on("message", response => {
+      const request = pending.get(response.id);
+      if (!request) return;
+      pending.delete(response.id);
+      if (response.ok) request.resolve(response.result); else request.reject(new Error(response.error));
+    });
+    worker.on("error", fail);
+    worker.on("exit", fail);
+  } catch (error) { worker = null; console.warn(`Meterkat island: foreground probe runs on the main thread (${error instanceof Error ? error.message : error})`); }
+
+  function ask(request: { op: "read" } | { op: "luminance"; points: Point[] }) {
+    const id = nextId++;
+    return new Promise<unknown>((resolve, reject) => { pending.set(id, { resolve, reject }); worker!.postMessage({ ...request, id }); });
+  }
+  return {
+    async read() {
+      if (!worker) return (local ??= fallback()).read();
+      const reading = await ask({ op: "read" }) as ForegroundReading | null;
+      return reading && { ...reading, anchor: reading.anchor && toDip(reading.anchor) };
+    },
+    async luminance(points, displayId) {
+      if (!worker) return (local ??= fallback()).luminance(points, displayId);
+      return await ask({ op: "luminance", points: points.map(toScreen) }) as (number | null)[];
+    },
+    close() { const running = worker; worker = null; void running?.terminate(); },
+  };
 }
 
 /** Why the island cannot run here, or null when it can. */
@@ -106,9 +162,10 @@ export function linuxProbe(capture: ScreenCapture, cursor: () => Point): Foregro
 /**
  * The pointer in physical pixels, asked from the X server directly: on X11, Electron's screen.getCursorScreenPoint()
  * keeps returning a stale point unless one of the app's own windows receives pointer events, and the island's window
- * lets them through. Throws when libX11 cannot be loaded or the display not opened.
+ * lets them through. `primary` is whether the (logical) first button is held. Throws when libX11 cannot be loaded or
+ * the display not opened.
  */
-export function x11Pointer(koffi: KoffiModule): () => Point | null {
+export function x11Pointer(koffi: KoffiModule): () => (Point & { primary: boolean }) | null {
   const x11 = koffi.load("libX11.so.6");
   const openDisplay = x11.func("void *XOpenDisplay(const char *name)");
   const rootWindow = x11.func("unsigned long XDefaultRootWindow(void *display)");
@@ -117,10 +174,20 @@ export function x11Pointer(koffi: KoffiModule): () => Point | null {
   if (!display) throw new Error("Cannot open the X display");
   const root = rootWindow(display);
   return () => {
-    const x = [0], y = [0];
+    const x = [0], y = [0], mask = [0];
     // False when the pointer is on another screen of the display: there is no point on this one.
-    return queryPointer(display, root, [0], [0], x, y, [0], [0], [0]) ? { x: x[0]!, y: y[0]! } : null;
+    return queryPointer(display, root, [0], [0], x, y, [0], [0], mask) ? { x: x[0]!, y: y[0]!, primary: (mask[0]! & BUTTON1_MASK) !== 0 } : null;
   };
+}
+const BUTTON1_MASK = 1 << 8;
+
+/** Whether the primary mouse button is held (Windows). GetAsyncKeyState reads the physical buttons, so swapped ones are honoured here. */
+export function windowsPrimaryButton(koffi: KoffiModule): () => boolean {
+  const user32 = koffi.load("user32.dll");
+  const keyState = user32.func("int16 __stdcall GetAsyncKeyState(int32 key)");
+  const metrics = user32.func("int32 __stdcall GetSystemMetrics(int32 index)");
+  const VK_LBUTTON = 0x01, VK_RBUTTON = 0x02, SM_SWAPBUTTON = 23;
+  return () => (keyState(metrics(SM_SWAPBUTTON) ? VK_RBUTTON : VK_LBUTTON) & 0x8000) !== 0;
 }
 
 function pixelLuminance(shot: Thumbnail, p: Point): number | null {
