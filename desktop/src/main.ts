@@ -66,7 +66,10 @@ function appAutostart() {
   if (process.platform === "win32") {
     // Electron quotes the path but joins the arguments as they are.
     const [path, ...args] = command.map((part, i) => i > 0 && part.includes(" ") ? `"${part}"` : part) as [string, ...string[]];
-    return { supported: true, enabled: app.getLoginItemSettings({ path, args }).openAtLogin, set: (on: boolean) => app.setLoginItemSettings({ openAtLogin: on, path, args, name: LOGIN_ITEM_NAME }) };
+    // openAtLogin looks for a Run value named after the AppUserModelId; ours is named LOGIN_ITEM_NAME.
+    const items = app.getLoginItemSettings({ path, args }).launchItems ?? [];
+    const enabled = items.some(item => item.name === LOGIN_ITEM_NAME && item.scope === "user" && item.enabled);
+    return { supported: true, enabled, set: (on: boolean) => app.setLoginItemSettings({ openAtLogin: on, path, args, name: LOGIN_ITEM_NAME }) };
   }
   return { supported: false, enabled: false, set: () => { throw new Error(`Autostart is not supported on ${process.platform}`); } };
 }

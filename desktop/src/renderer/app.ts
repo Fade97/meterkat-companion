@@ -107,7 +107,9 @@ function toggle(action: string, checked: boolean, label: string) {
 
 function settingsView() {
   const { autostart, update, registration } = state;
-  const service = autostart.service ? `<div class="notice"><p>The CLI companion is also set up to start at sign-in${state.sync.mode === "service" ? " and is syncing right now" : ""}. Two companions would send the same data twice.</p><button class="btn" data-action="take-over">Let the app sync instead</button></div>` : "";
+  const running = state.sync.mode === "service";
+  const serviceText = autostart.service ? `The CLI companion is also set up to start at sign-in${running ? " and is syncing right now" : ""}.` : "The CLI companion is syncing in the background right now.";
+  const service = autostart.service || running ? `<div class="notice"><p>${serviceText} Two companions would send the same data twice.</p><button class="btn" data-action="take-over">Let the app sync instead</button></div>` : "";
   const start = autostart.supported ? `<div class="card row"><div><div>Start at sign-in</div><div class="muted small">Opens hidden in the tray and keeps your phone up to date.</div></div>${toggle("autostart", autostart.app, "Start at sign-in")}</div>` : "";
   const latest = update.newer ? `Meterkat ${esc(update.latest)} is available.` : update.latest ? "You have the latest version." : update.error ? `<span class="error">${esc(update.error)}</span>` : "Not checked yet.";
   return `<h2>Startup</h2>${service}${start}

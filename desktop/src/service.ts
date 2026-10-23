@@ -31,7 +31,8 @@ export function backgroundPid(stateDir: string, bootedAt: number) {
   } catch { return undefined; }
 }
 
-export function processAlive(pid: number) { try { process.kill(pid, 0); return true; } catch { return false; } }
+/** EPERM: the process exists but belongs to another session or integrity level. */
+export function processAlive(pid: number) { try { process.kill(pid, 0); return true; } catch (error) { return (error as NodeJS.ErrnoException).code === "EPERM"; } }
 
 /** The state directory a unit runs with: its AI_USAGE_STATE_DIR, otherwise the default for this user. */
 export function unitStateDirectory(environment: string) {
