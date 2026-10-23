@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexCommand } from "../src/codex.js";
+import { codexCommand, nativeCodexBeside } from "../src/codex.js";
 
 // An npm global install on Windows: codex.cmd shim plus node_modules/@openai/codex/bin/codex.js, no codex.exe.
 function npmGlobal(t: { after: (fn: () => void) => void }, withNode: boolean) {
@@ -29,4 +29,32 @@ test("unpackaged companion already is Node and keeps using its own runtime", t =
 test("packaged companion without Node explains how to point at the native Codex executable", t => {
   const { env } = npmGlobal(t, false);
   assert.throws(() => codexCommand(env, "win32", true), /Node\.js on PATH.*AI_USAGE_CODEX_BIN/);
+});
+
+// Where npm, pnpm or an older bundle put the native binary that codex.js would start.
+const layouts = {
+  nested: (npm: string) => join(npm, "node_modules", "@openai", "codex", "node_modules", "@openai", "codex-win32-x64"),
+  hoisted: (npm: string) => join(npm, "node_modules", "@openai", "codex-win32-x64"),
+  bundled: (npm: string) => join(npm, "node_modules", "@openai", "codex"),
+};
+for (const [name, base] of Object.entries(layouts)) {
+  test(`Windows starts the ${name} native Codex binary directly, not through codex.js (no console window)`, t => {
+    const { script, env } = npmGlobal(t, false);
+    const npm = env.PATH.split(";")[0]!;
+    const native = join(base(npm), "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
+    mkdirSync(join(native, ".."), { recursive: true }); writeFileSync(native, "");
+    assert.equal(nativeCodexBeside(script, "x64"), native);
+    // Neither packaged nor desktop builds need Node then; a configured codex.js resolves the same way.
+    assert.deepEqual(codexCommand(env, "win32", true, "x64"), { command: native, args: [] });
+    assert.deepEqual(codexCommand(env, "win32", false, "x64"), { command: native, args: [] });
+    assert.deepEqual(codexCommand({ ...env, AI_USAGE_CODEX_BIN: script }, "win32", true, "x64"), { command: native, args: [] });
+  });
+}
+
+test("native lookup ignores other architectures and falls back to codex.js", t => {
+  const { script, node, env } = npmGlobal(t, true);
+  const native = join(env.PATH.split(";")[0]!, "node_modules", "@openai", "codex-win32-x64", "vendor", "x86_64-pc-windows-msvc", "bin", "codex.exe");
+  mkdirSync(join(native, ".."), { recursive: true }); writeFileSync(native, "");
+  assert.equal(nativeCodexBeside(script, "ia32"), undefined);
+  assert.deepEqual(codexCommand(env, "win32", true, "arm64"), { command: node, args: [script] });
 });

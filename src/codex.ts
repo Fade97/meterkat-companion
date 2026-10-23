@@ -1,7 +1,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { isSea } from "node:sea";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { fromCodexLimits, type ProviderUsage } from "../shared/snapshot.js";
 import { childEnv } from "./runtime.js";
 import { findExecutable } from "./setup.js";
@@ -13,15 +13,30 @@ const nodeFor = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform, packaged: bo
   return node;
 };
 
-export function codexCommand(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, packaged = isSea()): { command: string; args: string[] } {
+// codex.js only starts the native binary its platform package ships, without hiding the console. Under a parent
+// without a console (the Electron desktop app) Windows gives that binary a visible window on every sync, so the
+// native binary is started directly, the way codex.js would find it: nested or hoisted package, then bundled vendor.
+const WINDOWS_TRIPLE: Partial<Record<string, string>> = { x64: "x86_64-pc-windows-msvc", arm64: "aarch64-pc-windows-msvc" };
+export function nativeCodexBeside(script: string, arch: string = process.arch) {
+  const triple = WINDOWS_TRIPLE[arch]; if (!triple) return undefined;
+  const root = dirname(dirname(script)); const platformPackage = `codex-win32-${arch}`;
+  return [join(root, "node_modules", "@openai", platformPackage), join(dirname(root), platformPackage), root]
+    .map(base => join(base, "vendor", triple, "bin", "codex.exe")).find(file => existsSync(file));
+}
+
+export function codexCommand(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, packaged = isSea(), arch: string = process.arch): { command: string; args: string[] } {
+  const viaScript = (script: string) => {
+    const native = platform === "win32" ? nativeCodexBeside(script, arch) : undefined;
+    return native ? { command: native, args: [] } : { command: nodeFor(env, platform, packaged), args: [script] };
+  };
   const configured = env.AI_USAGE_CODEX_BIN;
-  if (configured) return configured.endsWith(".js") ? { command: nodeFor(env, platform, packaged), args: [configured] } : { command: configured, args: [] };
+  if (configured) return configured.endsWith(".js") ? viaScript(configured) : { command: configured, args: [] };
   if (platform === "win32") {
     for (const directory of (env.PATH ?? env.Path ?? "").split(";")) {
       if (!directory) continue;
       if (existsSync(join(directory, "codex.exe"))) return { command: join(directory, "codex.exe"), args: [] };
       const script = join(directory, "node_modules", "@openai", "codex", "bin", "codex.js");
-      if (existsSync(script)) return { command: nodeFor(env, platform, packaged), args: [script] };
+      if (existsSync(script)) return viaScript(script);
     }
     throw new Error("Codex not found; set AI_USAGE_CODEX_BIN to its native executable or codex.js");
   }
