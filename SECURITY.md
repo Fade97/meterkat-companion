@@ -8,6 +8,6 @@ In scope:
 
 - this repository: collectors, local state, pairing, relay client, autostart, self-update and packaging;
 - protocol v2 ([protocol/v2.md](protocol/v2.md)) and its use by the hosted relay `meterkat-relay.fabian-duerkop.de`;
-- the signed releases in [Fade97/meterkat-releases](https://github.com/Fade97/meterkat-releases).
+- the signed releases of this repository.
 
 Out of scope: denial of service through volume against the hosted relay, and findings in the provider CLIs themselves (report those to Anthropic, OpenAI or Google).

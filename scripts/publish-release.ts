@@ -1,5 +1,5 @@
-// Maintainer-only: publishes companion binaries built by this repository's release workflow to the releases
-// repository. Runs locally with an authenticated `gh`; no cross-repository token or signing key lives in Actions.
+// Maintainer-only: publishes companion binaries built by this repository's release workflow as a GitHub release
+// of this repository. Runs locally with an authenticated `gh`; the signing key never lives in Actions.
 //
 //   pnpm publish:release companion-v1.0.0                 # download the tag's workflow artifacts, verify, sign, create a DRAFT
 //   pnpm publish:release companion-v1.0.0 --run 12345     # use a specific (e.g. workflow_dispatch) run
@@ -9,7 +9,7 @@
 // Pass --run <id> to choose a run explicitly (e.g. workflow_dispatch); without it only the tag's push run is used.
 // Downloaded binaries must carry a build-provenance attestation from this repository's release workflow for the
 // tagged commit (`gh attestation verify`); otherwise nothing is signed.
-// Options: --targets linux-x64,windows-x64 (default: all), --repo <owner/name> (default Fade97/meterkat-releases),
+// Options: --targets linux-x64,windows-x64 (default: all), --repo <owner/name> (default Fade97/meterkat-companion),
 // --source <owner/name> (default Fade97/meterkat-companion). Versions with a hyphen become GitHub prereleases, which
 // the updater ignores unless asked for them explicitly.
 //
@@ -155,9 +155,9 @@ const releaseNotes = (version: string) => versionNotes(version) + `Single-file M
 - Windows: run \`meterkat-companion-${version}-windows-x64.exe setup\` from a terminal. The build is not code-signed: in SmartScreen choose **More info → Run anyway**.
 - Linux: \`tar -xzf meterkat-companion-${version}-linux-<arch>.tar.gz && ./meterkat setup\`.
 
-Installed companions update themselves after checking the Ed25519 signature on SHA256SUMS. To verify by hand: \`sha256sum -c SHA256SUMS --ignore-missing\`; the signature check is described in the [README](https://github.com/Fade97/meterkat-releases#readme). Build provenance: \`gh attestation verify <file> -R Fade97/meterkat-companion\`.
+Installed companions update themselves after checking the Ed25519 signature on SHA256SUMS. To verify by hand: \`sha256sum -c SHA256SUMS --ignore-missing\`; the signature check is described in [docs/installation.md](https://github.com/Fade97/meterkat-companion/blob/main/docs/installation.md#verify-a-download-by-hand). Build provenance: \`gh attestation verify <file> -R Fade97/meterkat-companion\`.
 
-The companion is open source under the MIT licence: [github.com/Fade97/meterkat-companion](https://github.com/Fade97/meterkat-companion) (\`meterkat licenses\`). The hosted relay is a separate free service under its [terms of use](https://meterkat.fabian-duerkop.de/terms).`;
+The companion is open source under the MIT licence (\`meterkat licenses\`). The hosted relay is a separate free service under its [terms of use](https://meterkat.fabian-duerkop.de/terms).`;
 
 function versionNotes(version: string) {
   const file = join(import.meta.dirname, "..", "docs", "releases", `companion-${version}.md`);
@@ -167,7 +167,7 @@ function versionNotes(version: string) {
 if (process.argv[1] && resolve(process.argv[1]).endsWith(join("scripts", "publish-release.ts"))) {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
     run: { type: "string" }, dir: { type: "string" }, targets: { type: "string" }, publish: { type: "boolean", default: false },
-    repo: { type: "string", default: "Fade97/meterkat-releases" }, source: { type: "string", default: "Fade97/meterkat-companion" },
+    repo: { type: "string", default: "Fade97/meterkat-companion" }, source: { type: "string", default: "Fade97/meterkat-companion" },
   } });
   const tag = positionals[0] ?? "";
   const version = tag.startsWith(TAG_PREFIX) ? tag.slice(TAG_PREFIX.length) : "";

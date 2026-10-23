@@ -6,12 +6,12 @@ import { COMPANION_VERSION } from "./version.js";
 import { readState, writeState } from "./state.js";
 import { RELEASE_PUBLIC_KEYS, verifySignature } from "./release-key.js";
 
-// Self-update for the packaged single-file companion from the releases repository, which only holds signed
-// binaries (built by this repository's release workflow). Releases are tagged `companion-v<semver>`; drafts are never visible and
+// Self-update for the packaged single-file companion from this repository's GitHub releases (binaries built
+// by its release workflow, signed by the maintainer). Releases are tagged `companion-v<semver>`; drafts are never visible and
 // prereleases are ignored unless explicitly requested. SHA256SUMS must carry a valid Ed25519 signature by an
 // embedded release key (SHA256SUMS.sig); the binary must then match its signed checksum, its size and the digest
 // GitHub reports. Updating never touches autostart: the binary is replaced at the same path.
-export const UPDATE_REPO = process.env.AI_USAGE_UPDATE_REPO ?? "Fade97/meterkat-releases";
+export const UPDATE_REPO = process.env.AI_USAGE_UPDATE_REPO ?? "Fade97/meterkat-companion";
 export const TAG_PREFIX = "companion-v";
 export const SUMS_ASSET = "SHA256SUMS";
 export const SIGNATURE_ASSET = "SHA256SUMS.sig";

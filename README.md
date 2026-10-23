@@ -6,7 +6,7 @@ Licence: [MIT](LICENSE). The Android app and the hosted relay service are not pa
 
 ## Install
 
-Download the single-file binary for your system from [Fade97/meterkat-releases](https://github.com/Fade97/meterkat-releases/releases) and run `setup`:
+Download the single-file binary for your system from the [releases](https://github.com/Fade97/meterkat-companion/releases) and run `setup`:
 
 ```sh
 # Linux (x64 or arm64)

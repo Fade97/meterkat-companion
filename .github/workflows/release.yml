@@ -2,7 +2,7 @@ name: Release
 # Builds the single-file Meterkat companion for every target, smoke-tests each binary on a matching runner,
 # attests its build provenance and writes SHA256SUMS. Nothing is published from here: tag pushes
 # (`companion-v<semver>`) and manual runs upload a `meterkat-companion-release` artifact, which the maintainer
-# verifies (including the attestations), signs (Ed25519, key never in CI) and publishes to Fade97/meterkat-releases
+# verifies (including the attestations), signs (Ed25519, key never in CI) and publishes it as a release of this repository
 # with scripts/publish-release.ts (docs/releasing.md). Pull requests that touch the build only build and smoke-test.
 on:
   push:

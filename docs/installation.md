@@ -4,7 +4,7 @@ The companion runs on the computer where Claude Code and/or Codex are signed in.
 
 ## Install the single-file companion (recommended)
 
-Download from the public releases page [github.com/Fade97/meterkat-releases/releases](https://github.com/Fade97/meterkat-releases/releases) (tags `companion-v<version>`). From 1.0.2 on, the binaries are built from this repository by its [release workflow](../.github/workflows/release.yml) and carry a build-provenance attestation (`gh attestation verify <file> -R Fade97/meterkat-companion`); 1.0.1 and earlier were built before the source was published. Each file is self-contained, so you don't need a separate Node.js:
+Download from this repository's [releases](https://github.com/Fade97/meterkat-companion/releases) (tags `companion-v<version>`; 1.0.1 and earlier are in the archived [meterkat-releases](https://github.com/Fade97/meterkat-releases/releases)). From 1.0.2 on, the binaries are built from this repository by its [release workflow](../.github/workflows/release.yml) and carry a build-provenance attestation (`gh attestation verify <file> -R Fade97/meterkat-companion`); 1.0.1 and earlier were built before the source was published. Each file is self-contained, so you don't need a separate Node.js:
 
 | System | File |
 | --- | --- |
@@ -41,7 +41,7 @@ Later commands: `meterkat inspect` (availability only, no quota values), `meterk
 
 ### Updates
 
-Packaged builds keep themselves current. Once a day the running companion asks `Fade97/meterkat-releases` (public GitHub API, no credentials) for the newest published, non-prerelease `companion-v*` release. Prereleases (judged by the version, e.g. `1.1.0-rc.1`, not by GitHub's flag) are only considered with `meterkat update --prerelease` or `AI_USAGE_UPDATE_PRERELEASE=1` (testing). `AI_USAGE_UPDATE_REPO` points to another releases repository. Updates are checked like this:
+Packaged builds keep themselves current. Once a day the running companion asks `Fade97/meterkat-companion` (public GitHub API, no credentials) for the newest published, non-prerelease `companion-v*` release. Prereleases (judged by the version, e.g. `1.1.0-rc.1`, not by GitHub's flag) are only considered with `meterkat update --prerelease` or `AI_USAGE_UPDATE_PRERELEASE=1` (testing). `AI_USAGE_UPDATE_REPO` points to another releases repository. Updates are checked like this:
 
 - **Sources:** only `api.github.com`, `github.com` and `*.githubusercontent.com` over HTTPS, checked on every redirect.
 - **Verification:** `SHA256SUMS.sig` must be a valid Ed25519 signature over `SHA256SUMS` by a release key embedded in the companion. Releases without a signature, or with an invalid one, are refused. The download must then match its signed checksum and the size and SHA-256 GitHub recorded for the asset; otherwise it is discarded.
