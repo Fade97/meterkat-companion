@@ -1,6 +1,6 @@
 // The window: setup wizard until the companion is registered, then Overview, Phones and Settings.
 // All data comes through window.meterkat (preload.ts); the page has no Node or network access of its own.
-import { ago, bars, percent, providerName, resetText } from "../format.js";
+import { ago, bars, percent, providerColor, providerGroups, providerName, resetText } from "../format.js";
 import type { AppState, Device, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
 
 declare global { interface Window { meterkat: MeterkatApi } }
@@ -50,17 +50,18 @@ function renderStatus() {
 
 function overview() {
   const { snapshot, sync } = state;
-  const cards = snapshot?.providers.map(p => {
+  const { shown, notSetUp } = providerGroups(snapshot);
+  const cards = shown.map(p => {
     const badge = p.state === "ok" ? `<span class="badge ok">Live</span>` : p.state === "auth_required" ? `<span class="badge warn">Sign-in needed</span>` : `<span class="badge">Unavailable</span>`;
     const rows = bars(p).map(b => {
-      const level = b.usedPercent >= 100 ? "full" : b.usedPercent >= 80 ? "high" : "";
-      return `<div class="bar"><span class="bar-label">${esc(b.label)}</span><span class="bar-value">${percent(b.usedPercent)}</span><div class="track" role="meter" aria-label="${esc(b.label)} used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(b.usedPercent)}"><div class="fill ${level}" data-width="${Math.min(100, Math.max(0, b.usedPercent))}"></div></div><span class="bar-reset">${esc(resetText(b.resetsAt))}</span></div>`;
+      return `<div class="bar"><span class="bar-label">${esc(b.label)}</span><span class="bar-value">${percent(b.usedPercent)}</span><div class="track" role="meter" aria-label="${esc(b.label)} used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(b.usedPercent)}"><div class="fill" data-width="${Math.min(100, Math.max(0, b.usedPercent))}"></div></div><span class="bar-reset">${esc(resetText(b.resetsAt))}</span></div>`;
     }).join("");
     const observed = p.sampledAt ? `Observed ${ago(p.sampledAt)}` : "No quota observed yet";
-    return `<section class="card"><div class="card-head"><strong>${esc(providerName(p.id))}</strong>${badge}</div>${rows || `<p class="muted small">No quota data. Check that ${esc(providerName(p.id))} is installed and signed in.</p>`}<div class="observed">${esc(observed)}</div></section>`;
-  }).join("") ?? "";
+    return `<section class="card" data-color="${esc(providerColor(p.id))}"><div class="card-head"><strong><span class="provider-dot"></span>${esc(providerName(p.id))}</strong>${badge}</div>${rows || `<p class="muted small">No quota data. Check that ${esc(providerName(p.id))} is installed and signed in.</p>`}<div class="observed">${esc(observed)}</div></section>`;
+  }).join("");
+  const missing = notSetUp.length ? `<div class="list">${notSetUp.map(id => `<div class="list-item compact"><span>${esc(providerName(id))}</span><span class="muted small">Not set up</span></div>`).join("")}</div>` : "";
   const waiting = sync.mode === "service" ? "Waiting for the background companion…" : "Reading your AI tools…";
-  const body = cards || `<div class="empty"><span class="spinner"></span><p class="gap">${waiting}</p></div>`;
+  const body = (cards || missing) ? cards + missing : `<div class="empty"><span class="spinner"></span><p class="gap">${waiting}</p></div>`;
   const footer = sync.mode === "service"
     ? `<p class="muted small gap">The CLI companion syncs in the background on this computer; this window shows its data. You can let the app take over in Settings.</p>`
     : `<div class="sync-bar"><span class="muted small">${sync.error ? `<span class="error">${esc(sync.error)}</span>` : "Syncs every minute while Meterkat runs, also from the tray."}</span><button class="btn" data-action="sync" ${sync.running ? "disabled" : ""}>${sync.running ? `<span class="spinner"></span>` : "Sync now"}</button></div>`;
@@ -169,6 +170,7 @@ function render() {
   $("#view").innerHTML = inSetup ? setupView() : view === "phones" ? phonesView() : view === "settings" ? settingsView() : overview();
   // The CSP blocks style attributes; widths are set through the CSSOM instead.
   for (const fill of document.querySelectorAll<HTMLElement>(".fill[data-width]")) fill.style.width = `${fill.dataset.width}%`;
+  for (const card of document.querySelectorAll<HTMLElement>(".card[data-color]")) card.style.setProperty("--provider", card.dataset.color!);
   const restored = document.querySelector<HTMLInputElement>("#relay-url");
   if (restored && relayInput !== undefined) restored.value = relayInput;
 }

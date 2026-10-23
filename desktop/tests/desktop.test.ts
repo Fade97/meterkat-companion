@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
-import { ago, bars, duration, resetText, trayLines } from "../src/format.js";
+import { ago, bars, duration, providerColor, providerGroups, resetText, trayLines } from "../src/format.js";
 import { autostartFile, desktopEntry, execLine, launchCommand, linuxAutostart } from "../src/login-item.js";
 import { backgroundPid, cliServiceRunning, unitStateDirectory } from "../src/service.js";
 import { loginShellPath, mergePath } from "../src/shell-path.js";
@@ -33,6 +33,24 @@ test("tray lines show the highest used share and stale or sign-in states", () =>
   const snapshot: Snapshot = { schemaVersion: 1, sequence: 1, generatedAt: now, providers: [claude, antigravity, { id: "codex", state: "auth_required", sampledAt: null, windows: {} }] };
   assert.deepEqual(trayLines(snapshot), ["Claude: 81% used", "Antigravity: 10% used (stale)", "Codex: sign-in needed"]);
   assert.deepEqual(trayLines(null), []);
+});
+
+test("providers that never reported quota are grouped as not set up", () => {
+  const codexMissing: ProviderUsage = { id: "codex", state: "unavailable", sampledAt: null, windows: {} };
+  const snapshot: Snapshot = { schemaVersion: 1, sequence: 1, generatedAt: now, providers: [claude, codexMissing] };
+  const groups = providerGroups(snapshot);
+  assert.deepEqual(groups.shown.map(p => p.id), ["claude"]);
+  // Antigravity is optional and absent from the snapshot until it reports data.
+  assert.deepEqual(groups.notSetUp, ["codex", "antigravity"]);
+  // Stale data and sign-in needed stay cards.
+  const signIn: ProviderUsage = { id: "codex", state: "auth_required", sampledAt: null, windows: {} };
+  assert.deepEqual(providerGroups({ ...snapshot, providers: [claude, antigravity, signIn] }), { shown: [claude, antigravity, signIn], notSetUp: [] });
+  assert.deepEqual(providerGroups(null), { shown: [], notSetUp: [] });
+  assert.deepEqual(trayLines(snapshot), ["Claude: 81% used", "Codex: not set up", "Antigravity: not set up"]);
+});
+
+test("bars use the provider colours from the Android app", () => {
+  assert.deepEqual(["claude", "codex", "antigravity", "other"].map(providerColor), ["#D97757", "#6EA8FE", "#34C77B", "#94A3B8"]);
 });
 
 test("login command points at the AppImage, the packaged executable or Electron with the app folder", () => {

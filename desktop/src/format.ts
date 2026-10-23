@@ -3,6 +3,11 @@ import type { ProviderUsage, Snapshot, WindowUsage } from "../../shared/snapshot
 
 const NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 export const providerName = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
+/** Providers the companion can read; listed as "not set up" when they have never reported quota. */
+export const KNOWN_PROVIDERS = ["claude", "codex", "antigravity"];
+// Same colours as the Android app's bars; unknown providers get a neutral grey, not an official colour.
+const COLORS: Record<string, string> = { claude: "#D97757", codex: "#6EA8FE", antigravity: "#34C77B" };
+export const providerColor = (id: string) => COLORS[id] ?? "#94A3B8";
 
 export type Bar = { label: string; usedPercent: number; resetsAt: number };
 /** The bars a provider shows: its five-hour and weekly windows, or its quota buckets (Antigravity). */
@@ -11,6 +16,16 @@ export function bars(provider: ProviderUsage): Bar[] {
   const result = windows.filter((w): w is [string, WindowUsage] => !!w[1]).map(([label, w]) => ({ label, ...w }));
   for (const meter of provider.meters ?? []) result.push({ label: meter.label, usedPercent: meter.usedPercent, resetsAt: meter.resetsAt });
   return result;
+}
+
+/** True when a provider has never reported quota on this computer: missing tool or never read. Sign-in needed is set up. */
+const notSetUp = (p: ProviderUsage) => p.state === "unavailable" && p.sampledAt === null && bars(p).length === 0;
+/** Splits a snapshot into providers shown as cards and ids shown as a single "not set up" line. */
+export function providerGroups(snapshot: Snapshot | null): { shown: ProviderUsage[]; notSetUp: string[] } {
+  if (!snapshot) return { shown: [], notSetUp: [] };
+  const shown = snapshot.providers.filter(p => !notSetUp(p));
+  const ids = new Set(shown.map(p => p.id));
+  return { shown, notSetUp: [...snapshot.providers.map(p => p.id), ...KNOWN_PROVIDERS].filter((id, i, all) => !ids.has(id) && all.indexOf(id) === i) };
 }
 
 export const percent = (value: number) => `${Math.round(value)}%`;
@@ -36,11 +51,11 @@ export function resetText(resetsAt: number, now = Date.now()) {
 
 /** One line per provider for the tray: the highest used share among its bars. */
 export function trayLines(snapshot: Snapshot | null): string[] {
-  if (!snapshot) return [];
-  return snapshot.providers.map(p => {
+  const { shown, notSetUp } = providerGroups(snapshot);
+  return [...shown.map(p => {
     const highest = bars(p).reduce<number | null>((max, b) => max === null || b.usedPercent > max ? b.usedPercent : max, null);
     if (p.state === "auth_required") return `${providerName(p.id)}: sign-in needed`;
     if (highest === null) return `${providerName(p.id)}: no data`;
     return `${providerName(p.id)}: ${percent(highest)} used${p.state === "ok" ? "" : " (stale)"}`;
-  });
+  }), ...notSetUp.map(id => `${providerName(id)}: not set up`)];
 }
