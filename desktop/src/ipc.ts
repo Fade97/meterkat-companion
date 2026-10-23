@@ -14,7 +14,12 @@ export type AppState = {
   snapshot: Snapshot | null;
   sync: { mode: SyncMode; running: boolean; lastSuccess: number | null; error: string | null };
   autostart: { supported: boolean; app: boolean; service: boolean };
-  update: { latest: string | null; newer: boolean; checkedAt: number | null; error: string | null };
+  /**
+   * install "auto": this copy updates itself (AppImage, Windows installation); "manual": only the download page.
+   * automatic: updates install without asking (shared with `meterkat update enable|disable`).
+   * ready: version downloaded and verified, waiting for a restart.
+   */
+  update: { latest: string | null; newer: boolean; checkedAt: number | null; error: string | null; install: "auto" | "manual"; automatic: boolean; downloading: boolean; ready: string | null };
   /** The drop at the top screen edge; `unsupported` says why it cannot run on this system. */
   island: { enabled: boolean; unsupported: string | null };
 };
@@ -42,6 +47,9 @@ export interface MeterkatApi {
   /** Removes the CLI autostart, stops its process and lets the app sync instead. */
   takeOver(): Promise<void>;
   checkUpdate(): Promise<void>;
+  /** Downloads the newest release if needed and restarts into it. */
+  installUpdate(): Promise<void>;
+  setAutomaticUpdates(enabled: boolean): Promise<void>;
   open(link: ExternalLink): Promise<void>;
   hide(): void;
   quit(): void;
@@ -53,6 +61,7 @@ export const CHANNEL = {
   startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
   autostart: "meterkat:autostart", island: "meterkat:island-enabled", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
+  installUpdate: "meterkat:install-update", automaticUpdates: "meterkat:automatic-updates",
   open: "meterkat:open", hide: "meterkat:hide", quit: "meterkat:quit",
 } as const;
 
