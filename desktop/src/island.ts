@@ -1,14 +1,22 @@
 // The island: a click-through, always-on-top window at the top edge of the display that shows an AI tool. The page
 // draws the drop and its animations; this side decides when it is visible, which colour it takes and what it announces.
-import { BrowserWindow, desktopCapturer, screen, type Display } from "electron";
+// The window takes the pointer only while it is on the drop (or the open panel); a click opens the panel with every
+// provider, and it closes when clicked again or once the pointer has left it.
+import { BrowserWindow, desktopCapturer, ipcMain, screen, type Display, type IpcMainEvent } from "electron";
 import type { Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow } from "./ai-apps.js";
-import { linuxProbe, nextTone, unsupportedReason, windowsProbe, type ForegroundProbe, type ForegroundReading, type KoffiModule, type ScreenCapture } from "./foreground.js";
+import { linuxProbe, nextTone, unsupportedReason, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type ScreenCapture } from "./foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
-import { samplePoints } from "./island-shape.js";
-import { ISLAND_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
+import type { BarMode } from "./format.js";
+import { hits, PANEL_MAX_HEIGHT, samplePoints, type HitArea } from "./island-shape.js";
+import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
-export const ISLAND_WINDOW = { width: 440, height: 84 };
+/** Tall enough for the open panel; everything outside the drop lets the pointer through. */
+export const ISLAND_WINDOW = { width: 440, height: PANEL_MAX_HEIGHT + 24 };
+/** How often the pointer is checked while the island is on screen. */
+const POINTER_MS = 50;
+/** The panel closes once the pointer has been off it this long. */
+const LEAVE_MS = 900;
 const POLL_MS = 1000;
 const TONE_MS = 1500;
 const EVENTS_MS = 5000;
@@ -21,6 +29,7 @@ const HIDE_AFTER = 2;
 export type IslandOptions = {
   snapshot: () => Snapshot | null;
   enabled: () => boolean;
+  mode: () => BarMode;
   preload: string;
   page: string;
   /** Pretends an AI tool is in front and cycles sample announcements (METERKAT_ISLAND_DEMO=1). */
@@ -39,13 +48,27 @@ export function createIsland(options: IslandOptions) {
   let current: IslandShown | null = null;
   let busyUntil = 0, quietUntil = 0, toneAt = 0, eventsAt = 0, nextId = 1, demoStep = 0, invisibleSince = 0;
   let timer: NodeJS.Timeout | null = null, polling = false, stopped = true;
+  let pointer: NodeJS.Timeout | null = null, area: HitArea | null = null, hover = false, expanded = false, insideAt = 0;
 
   function createProbe(): ForegroundProbe {
     if (process.platform === "win32") {
       const koffi = require("koffi") as KoffiModule;
       return windowsProbe(koffi, rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point));
     }
-    return linuxProbe(capture, () => screen.getCursorScreenPoint());
+    return linuxProbe(capture, cursor);
+  }
+
+  /** The pointer in DIP. Windows reports it live; X11 is asked directly (see x11Pointer). */
+  let x11: (() => Point | null) | null | undefined;
+  function cursor(): Point {
+    if (process.platform === "linux" && x11 === undefined) {
+      try { x11 = x11Pointer(require("koffi") as KoffiModule); } catch (error) {
+        x11 = null;
+        console.warn(`Meterkat island: cannot read the pointer from X11 (${error instanceof Error ? error.message : error})`);
+      }
+    }
+    const point = x11?.();
+    return point ? screen.screenToDipPoint(point) : screen.getCursorScreenPoint();
   }
 
   const capture: ScreenCapture = async displayId => {
@@ -75,7 +98,7 @@ export function createIsland(options: IslandOptions) {
     win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
     win.webContents.on("will-navigate", event => event.preventDefault());
     win.webContents.on("did-finish-load", send);
-    win.on("closed", () => { win = null; hidden = true; });
+    win.on("closed", () => { win = null; hidden = true; area = null; hover = false; expanded = false; });
     void win.loadFile(options.page);
     return win;
   }
@@ -90,18 +113,52 @@ export function createIsland(options: IslandOptions) {
 
   function send() {
     if (!win || win.isDestroyed()) return;
-    const update: IslandUpdate = { visible, tone, event: current, now: Date.now() };
+    const update: IslandUpdate = { visible, tone, event: current, now: Date.now(), mode: options.mode(), hover, expanded, snapshot: expanded ? options.snapshot() : null };
     win.webContents.send(ISLAND_CHANNEL, update);
   }
 
   function hideWindow() {
-    visible = false; current = null; misses = 0;
+    visible = false; current = null; misses = 0; release();
     if (win && !win.isDestroyed() && !hidden) { send(); win.hide(); }
     hidden = true;
   }
 
+  // ---- Pointer and panel -------------------------------------------------------------------------------------
+
+  /** Lets the pointer through again and closes the panel. */
+  function release() {
+    expanded = false;
+    if (hover) { hover = false; if (win && !win.isDestroyed()) win.setIgnoreMouseEvents(true); }
+  }
+
+  function setExpanded(next: boolean) {
+    if (next === expanded || (next && !visible)) return;
+    expanded = next;
+    // An announcement in progress gives way to the panel; queued ones wait until it has closed.
+    if (expanded) current = null; else quietUntil = Date.now() + SETTLE_MS;
+    send();
+  }
+
+  function track() {
+    if (!win || win.isDestroyed() || hidden) return;
+    const now = Date.now();
+    const inside = visible && hits(win.getBounds(), area, cursor());
+    if (inside !== hover) { hover = inside; win.setIgnoreMouseEvents(!inside); send(); }
+    if (inside) insideAt = now;
+    else if (expanded && now - insideAt > LEAVE_MS) setExpanded(false);
+  }
+
+  const fromPage = (event: IpcMainEvent) => !!win && !win.isDestroyed() && event.sender === win.webContents;
+  const onHitArea = (event: IpcMainEvent, next: unknown) => {
+    if (!fromPage(event)) return;
+    const value = next as HitArea | null;
+    area = value && [value.x, value.y, value.width, value.height].every(Number.isFinite) ? { x: value.x, y: value.y, width: value.width, height: value.height } : null;
+  };
+  // Only a click while the pointer is on the island counts; the window lets every other click through anyway.
+  const onToggle = (event: IpcMainEvent) => { if (fromPage(event) && hover) { insideAt = Date.now(); setExpanded(!expanded); } };
+
   async function read(): Promise<ForegroundReading | null> {
-    if (options.demo) return { window: { app: "claude", title: "Claude", descendants: [], fullscreen: false }, anchor: screen.getCursorScreenPoint(), pid: 0 };
+    if (options.demo) return { window: { app: "claude", title: "Claude", descendants: [], fullscreen: false }, anchor: cursor(), pid: 0 };
     probe ??= createProbe();
     return probe.read();
   }
@@ -133,7 +190,7 @@ export function createIsland(options: IslandOptions) {
     misses = ai ? 0 : misses + 1;
     const nextVisible = ai || (visible && misses < HIDE_AFTER);
 
-    if (ai && reading) {
+    if (ai && reading && !expanded) {
       const target = reading.anchor ? screen.getDisplayNearestPoint(reading.anchor) : screen.getPrimaryDisplay();
       if (!display || target.id !== display.id || hidden) { display = target; ensureWindow(); place(target); }
     }
@@ -141,6 +198,7 @@ export function createIsland(options: IslandOptions) {
     if (!hidden && win && process.platform === "win32") win.setAlwaysOnTop(true, "screen-saver"); // others may have risen above
     const changed = nextVisible !== visible;
     visible = nextVisible;
+    if (changed && !visible) release();
     if (changed && !visible) invisibleSince = now;
     // Let the drop form before it opens into an announcement.
     if (changed && visible) quietUntil = Math.max(quietUntil, now + 1400);
@@ -163,7 +221,7 @@ export function createIsland(options: IslandOptions) {
     }
 
     if (current && (now >= busyUntil || !visible)) { current = null; quietUntil = now + SETTLE_MS; send(); }
-    else if (!current && visible && now >= quietUntil) {
+    else if (!current && visible && !expanded && now >= quietUntil) {
       const { event, rest } = dequeue(queue, now);
       queue = rest;
       if (event) { current = { ...event, id: nextId++, holdMs: HOLD_MS[event.kind] }; busyUntil = now + HOLD_MS[event.kind] + 600; send(); }
@@ -183,9 +241,19 @@ export function createIsland(options: IslandOptions) {
   return {
     /** Why the island is unavailable here, or null. */
     unsupported: reason,
-    start() { if (stopped) { stopped = false; schedule(0); } },
+    start() {
+      if (!stopped) return;
+      stopped = false; schedule(0);
+      ipcMain.on(ISLAND_HIT_CHANNEL, onHitArea); ipcMain.on(ISLAND_TOGGLE_CHANNEL, onToggle);
+      pointer = setInterval(track, POINTER_MS);
+    },
     /** Re-reads settings and the snapshot right away, e.g. after a sync or when switched on or off. */
-    refresh() { eventsAt = 0; if (!stopped && !polling) schedule(0); },
-    stop() { stopped = true; if (timer) clearTimeout(timer); timer = null; if (win && !win.isDestroyed()) win.destroy(); win = null; },
+    refresh() { eventsAt = 0; if (expanded) send(); if (!stopped && !polling) schedule(0); },
+    stop() {
+      stopped = true; if (timer) clearTimeout(timer); timer = null;
+      if (pointer) clearInterval(pointer); pointer = null;
+      ipcMain.off(ISLAND_HIT_CHANNEL, onHitArea); ipcMain.off(ISLAND_TOGGLE_CHANNEL, onToggle);
+      if (win && !win.isDestroyed()) win.destroy(); win = null;
+    },
   };
 }

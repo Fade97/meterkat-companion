@@ -95,7 +95,9 @@ On first start a short setup checks your AI tools, registers with the relay (hos
 - a terminal (or VS Code/Cursor) running `claude` or `codex`
 - a browser tab whose title ends in Claude, Codex or ChatGPT (ChatGPT chats carry only their own title, so only its start page counts)
 
-The island never takes clicks or focus, and it hides over full-screen apps. Turn it off under **Settings → Show the island** or in the tray menu. It works on Windows and on Linux with X11. Wayland does not tell apps which window is in front, so the island is off there. Linux reads the foreground window with `xprop`; Windows uses Win32 calls through [koffi](https://koffi.dev/). `METERKAT_ISLAND_DEMO=1` shows the island with sample notices regardless of the foreground window, for trying it out.
+**Click the drop** (or an open notice) to see every provider at once: each window or quota bucket with its bar, percentage and time to reset. The panel closes when you click it again or move the pointer away from it. The island never takes focus; it takes clicks only while the pointer is on it and lets them through everywhere else. It hides over full-screen apps. Turn it off under **Settings → Show the island** or in the tray menu. It works on Windows and on Linux with X11. Wayland does not tell apps which window is in front, so the island is off there. Linux reads the foreground window with `xprop` and the pointer from the X server (libX11 through [koffi](https://koffi.dev/)); Windows uses Win32 calls through koffi.
+
+**Used or remaining:** **Settings → Coloured bars show** switches every bar and percentage between the used share and what is left, in the window, the island and the tray menu, like the setting in the phone app. It starts on *Used*. `METERKAT_ISLAND_DEMO=1` shows the island with sample notices regardless of the foreground window, for trying it out.
 
 Desktop sessions don't read your shell profile, so on Linux the app asks your login shell (`$SHELL -ilc`) for its `PATH` once at start to find `claude`, `codex` and `agy`. `AI_USAGE_CLAUDE_BIN`, `AI_USAGE_CODEX_BIN` and `AI_USAGE_ANTIGRAVITY_BIN` still override the lookup.
 

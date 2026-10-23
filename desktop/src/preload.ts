@@ -23,6 +23,7 @@ const api: MeterkatApi = {
   revokeAll: () => invoke(CHANNEL.revokeAll),
   setAutostart: enabled => invoke(CHANNEL.autostart, enabled),
   setIsland: enabled => invoke(CHANNEL.island, enabled),
+  setBarMode: mode => invoke(CHANNEL.barMode, mode),
   takeOver: () => invoke(CHANNEL.takeOver),
   checkUpdate: () => invoke(CHANNEL.checkUpdate),
   installUpdate: () => invoke(CHANNEL.installUpdate),

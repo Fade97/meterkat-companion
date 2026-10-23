@@ -2,9 +2,11 @@
 // no relay credentials and no source key. The pairing QR carries the key, so it exists only while pairing.
 import type { Snapshot } from "../../shared/snapshot.js";
 import type { ProviderCheck } from "../../src/setup.js";
+import type { BarMode } from "./format.js";
 import type { IslandEvent } from "./island-events.js";
+import type { HitArea } from "./island-shape.js";
 
-export type { ProviderCheck, Snapshot };
+export type { BarMode, HitArea, ProviderCheck, Snapshot };
 /** "service": a CLI companion (systemd unit or Windows background process) already syncs; the app only shows its data. */
 export type SyncMode = "app" | "service";
 export type AppState = {
@@ -22,6 +24,8 @@ export type AppState = {
   update: { latest: string | null; newer: boolean; checkedAt: number | null; error: string | null; install: "auto" | "manual"; automatic: boolean; downloading: boolean; ready: string | null };
   /** The drop at the top screen edge; `unsupported` says why it cannot run on this system. */
   island: { enabled: boolean; unsupported: string | null };
+  /** Whether bars and percentages show the used share or what is left (window, island and tray). */
+  bars: BarMode;
 };
 export type Pairing = { qr: string; expiresAt: number };
 export type Device = { id: string; pairedAt: number };
@@ -44,6 +48,7 @@ export interface MeterkatApi {
   revokeAll(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<void>;
   setIsland(enabled: boolean): Promise<void>;
+  setBarMode(mode: BarMode): Promise<void>;
   /** Removes the CLI autostart, stops its process and lets the app sync instead. */
   takeOver(): Promise<void>;
   checkUpdate(): Promise<void>;
@@ -60,7 +65,7 @@ export const CHANNEL = {
   detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync",
   startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
-  autostart: "meterkat:autostart", island: "meterkat:island-enabled", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
+  autostart: "meterkat:autostart", island: "meterkat:island-enabled", barMode: "meterkat:bar-mode", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
   installUpdate: "meterkat:install-update", automaticUpdates: "meterkat:automatic-updates",
   open: "meterkat:open", hide: "meterkat:hide", quit: "meterkat:quit",
 } as const;
@@ -71,6 +76,18 @@ export const CHANNEL = {
 export type IslandTone = "ink" | "white";
 /** An announcement on screen; `id` changes per announcement, `holdMs` is how long it stays open. */
 export type IslandShown = IslandEvent & { id: number; holdMs: number };
-export type IslandUpdate = { visible: boolean; tone: IslandTone; event: IslandShown | null; now: number };
-export interface IslandApi { onUpdate(listener: (update: IslandUpdate) => void): () => void }
+/**
+ * hover: the pointer is on the island, so it takes clicks. expanded: the panel with every provider is open; it
+ * carries the snapshot, the only time the island page sees one.
+ */
+export type IslandUpdate = { visible: boolean; tone: IslandTone; event: IslandShown | null; now: number; mode: BarMode; hover: boolean; expanded: boolean; snapshot: Snapshot | null };
+export interface IslandApi {
+  onUpdate(listener: (update: IslandUpdate) => void): () => void;
+  /** Where the island currently is, so the main process knows when the pointer is on it; null while hidden. */
+  hitArea(area: HitArea | null): void;
+  /** A click on the island: opens or closes the panel. */
+  toggle(): void;
+}
 export const ISLAND_CHANNEL = "meterkat:island";
+export const ISLAND_HIT_CHANNEL = "meterkat:island-hit";
+export const ISLAND_TOGGLE_CHANNEL = "meterkat:island-toggle";

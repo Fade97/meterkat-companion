@@ -36,6 +36,11 @@ export function providerGroups(snapshot: Snapshot | null): { shown: ProviderUsag
 
 export const percent = (value: number) => `${Math.round(value)}%`;
 
+/** What the bars show, like the Android app's "Colored bars show" setting: the used share or what is left. */
+export type BarMode = "used" | "remaining";
+/** The share a bar shows in `mode`, clamped to 0–100. */
+export const shownPercent = (usedPercent: number, mode: BarMode) => Math.min(100, Math.max(0, mode === "remaining" ? 100 - usedPercent : usedPercent));
+
 /** "3 h 12 min", "45 min", "2 d 4 h"; never negative. */
 export function duration(ms: number) {
   const minutes = Math.max(0, Math.round(ms / 60_000));
@@ -55,13 +60,13 @@ export function resetText(resetsAt: number, now = Date.now()) {
   return resetsAt <= now ? "reset due" : `resets in ${duration(resetsAt - now)}`;
 }
 
-/** One line per provider for the tray: the highest used share among its bars. */
-export function trayLines(snapshot: Snapshot | null): string[] {
+/** One line per provider for the tray: the highest used share among its bars, or the lowest share left. */
+export function trayLines(snapshot: Snapshot | null, mode: BarMode = "used"): string[] {
   const { shown, notSetUp } = providerGroups(snapshot);
   return [...shown.map(p => {
     const highest = bars(p).reduce<number | null>((max, b) => max === null || b.usedPercent > max ? b.usedPercent : max, null);
     if (p.state === "auth_required") return `${providerName(p.id)}: sign-in needed`;
     if (highest === null) return `${providerName(p.id)}: no data`;
-    return `${providerName(p.id)}: ${percent(highest)} used${p.state === "ok" ? "" : " (stale)"}`;
+    return `${providerName(p.id)}: ${percent(shownPercent(highest, mode))} ${mode}${p.state === "ok" ? "" : " (stale)"}`;
   }), ...notSetUp.map(id => `${providerName(id)}: not set up`)];
 }

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
-import { ago, bars, duration, providerColor, providerGroups, providerMark, resetText, trayLines } from "../src/format.js";
+import { ago, bars, duration, providerColor, providerGroups, providerMark, resetText, shownPercent, trayLines } from "../src/format.js";
 import { autostartFile, desktopEntry, execLine, launchCommand, linuxAutostart } from "../src/login-item.js";
 import { backgroundPid, cliServiceRunning, unitStateDirectory } from "../src/service.js";
 import { loginShellPath, mergePath } from "../src/shell-path.js";
@@ -33,6 +33,16 @@ test("tray lines show the highest used share and stale or sign-in states", () =>
   const snapshot: Snapshot = { schemaVersion: 1, sequence: 1, generatedAt: now, providers: [claude, antigravity, { id: "codex", state: "auth_required", sampledAt: null, windows: {} }] };
   assert.deepEqual(trayLines(snapshot), ["Claude: 81% used", "Antigravity: 10% used (stale)", "Codex: sign-in needed"]);
   assert.deepEqual(trayLines(null), []);
+});
+
+test("with \"remaining\" the bars and tray show what is left", () => {
+  assert.equal(shownPercent(42.4, "used"), 42.4);
+  assert.equal(shownPercent(42.4, "remaining"), 57.6);
+  assert.equal(shownPercent(104, "remaining"), 0);
+  assert.equal(shownPercent(-3, "used"), 0);
+  const snapshot: Snapshot = { schemaVersion: 1, sequence: 1, generatedAt: now, providers: [claude, antigravity] };
+  // The most used bar is the one with the least left.
+  assert.deepEqual(trayLines(snapshot, "remaining"), ["Claude: 19% remaining", "Antigravity: 90% remaining (stale)", "Codex: not set up"]);
 });
 
 test("providers that never reported quota are grouped as not set up", () => {

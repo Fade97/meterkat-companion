@@ -84,6 +84,9 @@ p { margin: 0 0 10px; }
 .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
 .switch input:checked + span::after { transform: translateX(16px); background: var(--accent-ink); }
 .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
+.segmented { display: flex; flex: none; padding: 2px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
+.segmented button { border: 0; background: none; padding: 5px 10px; border-radius: 8px; color: var(--muted); font-size: 13px; font-weight: 550; cursor: pointer; }
+.segmented button.on { background: var(--accent); color: var(--accent-ink); }
 
 .notice { border: 1px solid #4a3d1c; background: #221d10; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
 .qr { display: block; margin: 6px auto 12px; width: 240px; height: 240px; border-radius: 16px; background: #fff; }
