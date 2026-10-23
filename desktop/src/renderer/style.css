@@ -53,7 +53,10 @@ p { margin: 0 0 10px; }
 .track { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
 /* Bars use only the provider's colour (as on Android); --provider is set per card from the renderer. */
 .fill { height: 100%; border-radius: inherit; background: var(--provider, var(--muted)); }
-.provider-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--provider, var(--muted)); margin-right: 8px; vertical-align: 1px; }
+.provider-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--provider, var(--muted)); flex: none; }
+.provider { display: inline-flex; align-items: center; gap: 8px; }
+.provider-mark { width: 16px; height: 16px; flex: none; fill: var(--provider, var(--muted)); }
+.not-set-up .provider-mark, .not-set-up .provider-dot { opacity: .45; }
 .bar-reset { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; }
 .observed { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
 

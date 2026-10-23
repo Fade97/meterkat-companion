@@ -40,5 +40,7 @@ const sections = [...packages].sort().map(dir => {
   if (!file) throw new Error(`${pkg.name} ships no licence file; add its notice before bundling it`);
   return `${pkg.name} ${pkg.version} (${pkg.license ?? "see below"})\n\n${readFileSync(join(dir, file), "utf8").trim()}`;
 });
+// Provider glyphs in the window (src/provider-glyphs.ts) are not an npm package.
+sections.push(`Lobe Icons (provider glyphs: Claude, Codex, Antigravity), MIT\n\n${readFileSync(join(root, "licenses", "lobe-icons-LICENSE"), "utf8").trim()}`);
 writeFileSync(join(dist, "THIRD_PARTY_NOTICES.txt"), `Meterkat desktop: third-party notices\n\nElectron and Chromium: LICENSE.electron.txt and LICENSES.chromium.html in the installation folder.\n\n${sections.join(`\n\n${"=".repeat(72)}\n\n`)}\n`);
 console.log(`Built desktop ${version} into ${dist}`);

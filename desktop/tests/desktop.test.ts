@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
-import { ago, bars, duration, providerColor, providerGroups, resetText, trayLines } from "../src/format.js";
+import { ago, bars, duration, providerColor, providerGroups, providerMark, resetText, trayLines } from "../src/format.js";
 import { autostartFile, desktopEntry, execLine, launchCommand, linuxAutostart } from "../src/login-item.js";
 import { backgroundPid, cliServiceRunning, unitStateDirectory } from "../src/service.js";
 import { loginShellPath, mergePath } from "../src/shell-path.js";
@@ -104,4 +104,9 @@ test("login shell PATH is read between markers and merged after the current one"
   assert.equal(loginShellPath({ SHELL: "zsh" }, run), undefined);
   assert.equal(loginShellPath({}, run), undefined);
   if (process.platform !== "win32") assert.equal(mergePath("/usr/bin:/bin", "/home/u/.local/bin:/usr/bin:relative"), "/usr/bin:/bin:/home/u/.local/bin");
+});
+
+test("provider marks: glyph for known providers, dot otherwise", () => {
+  for (const id of ["claude", "codex", "antigravity"]) assert.match(providerMark(id), /^<svg class="provider-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="[^"<>]+"\/><\/svg>$/);
+  assert.equal(providerMark("gemini"), `<span class="provider-dot" aria-hidden="true"></span>`);
 });

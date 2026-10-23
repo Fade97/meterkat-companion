@@ -76,4 +76,4 @@ Issues and pull requests are welcome. Please keep changes focused and include te
 
 Report vulnerabilities privately, not in public issues: see [SECURITY.md](SECURITY.md).
 
-Meterkat is not affiliated with or endorsed by Anthropic, OpenAI or Google. "Meterkat" and its logo identify the official app and releases; the MIT licence covers the code, not the name.
+Meterkat is not affiliated with or endorsed by Anthropic, OpenAI or Google. "Meterkat" and its logo identify the official app and releases; the MIT licence covers the code, not the name. The desktop app shows the providers' glyphs from [Lobe Icons](https://github.com/lobehub/lobe-icons) (MIT, [notice](desktop/licenses/lobe-icons-LICENSE)) only to identify whose quota is shown; the marks remain their owners' trademarks.

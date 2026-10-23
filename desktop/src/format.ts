@@ -1,5 +1,6 @@
 // Formatting shared by the window and the tray menu; pure, so it is unit-tested.
 import type { ProviderUsage, Snapshot, WindowUsage } from "../../shared/snapshot.js";
+import { PROVIDER_GLYPHS } from "./provider-glyphs.js";
 
 const NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 export const providerName = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
@@ -8,6 +9,11 @@ export const KNOWN_PROVIDERS = ["claude", "codex", "antigravity"];
 // Same colours as the Android app's bars; unknown providers get a neutral grey, not an official colour.
 const COLORS: Record<string, string> = { claude: "#D97757", codex: "#6EA8FE", antigravity: "#34C77B" };
 export const providerColor = (id: string) => COLORS[id] ?? "#94A3B8";
+/** Inline SVG of the provider's glyph, filled with --provider; a plain dot for providers without a registered glyph. */
+export function providerMark(id: string) {
+  const glyph = PROVIDER_GLYPHS[id];
+  return glyph ? `<svg class="provider-mark" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd" d="${glyph}"/></svg>` : `<span class="provider-dot" aria-hidden="true"></span>`;
+}
 
 export type Bar = { label: string; usedPercent: number; resetsAt: number };
 /** The bars a provider shows: its five-hour and weekly windows, or its quota buckets (Antigravity). */
