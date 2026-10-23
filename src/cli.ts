@@ -14,10 +14,8 @@ import { isV2, pairingLinkV2, rotateKey, uploadV2, writerCall } from "./relay-v2
 import { COMPANION_VERSION } from "./version.js";
 import { automaticUpdates, CHECK_INTERVAL_MS, checkForUpdate, realRunner, recoverInterruptedSwap, rollback, setAutomatic, skipVersion, update, updateSettings } from "./update.js";
 import { defaultRelay, registerWithRelay } from "./registration.js";
-import { askYesNo, defaultInstallTarget, findExecutable, installExecutable, openFile, setup, type ProviderCheck } from "./setup.js";
-import { providerReaders } from "./collect.js";
-import { codexCommand } from "./codex.js";
-import { antigravityCommand } from "./antigravity.js";
+import { askYesNo, defaultInstallTarget, installExecutable, openFile, setup } from "./setup.js";
+import { detectProviders } from "./providers.js";
 import { confirmDestructive, destructiveArguments, isDestructive, terminalConfirmIo } from "./confirm.js";
 
 async function request(config: Pick<Config, "relay" | "writerToken">, path: string, method: string, value?: unknown) {
@@ -46,24 +44,6 @@ async function createPairing(config: Config, pairingRelay: string) {
 }
 // Packaged builds are their own launcher (argv[1] repeats the executable); bundles run as `node <bundle>`.
 const launcher = () => isSea() ? [] : [process.argv[1] ?? ""];
-// Presence comes from PATH (no side effects); readiness from the same native quota read `inspect` uses.
-async function detectProviders(probe: boolean): Promise<ProviderCheck[]> {
-  const commands: Record<string, () => string | undefined> = {
-    claude: () => findExecutable(process.env.AI_USAGE_CLAUDE_BIN ?? "claude"),
-    codex: () => { try { const c = codexCommand(); return c.args[0] ?? findExecutable(c.command); } catch { return undefined; } },
-    antigravity: () => findExecutable(antigravityCommand().command),
-  };
-  const ids = [...new Set([...providerReaders.map(r => r.id), ...Object.keys(commands)])];
-  return Promise.all(ids.map(async id => {
-    const installed = !!commands[id]?.();
-    const reader = providerReaders.find(r => r.id === id);
-    if (!reader) return { id, installed, ready: null, note: installed ? "found; quota collection is not supported yet" : "not found" };
-    if (!installed) return { id, installed, ready: false, note: "not found on PATH (set AI_USAGE_" + id.toUpperCase() + "_BIN if installed elsewhere)" };
-    if (!probe) return { id, installed, ready: null, note: "found; sign-in is checked during setup" };
-    try { const usage = await reader.read(); return { id, installed, ready: usage.state === "ok", note: usage.state === "ok" ? "signed in, quota readable" : "found, but it reported no quota data; run setup again, and check sign-in if this persists" }; }
-    catch (error) { return { id, installed, ready: false, note: error instanceof Error ? error.message : "quota unavailable" }; }
-  }));
-}
 // Automatic updates apply only to packaged builds. The new binary takes over on the next start: systemd
 // restarts the unit after the exit below (Restart=on-failure), a Windows sign-in launcher starts a detached replacement.
 async function maybeUpdate() {

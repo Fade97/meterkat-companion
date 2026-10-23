@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { isSea } from "node:sea";
 import { join } from "node:path";
 import { fromCodexLimits, type ProviderUsage } from "../shared/snapshot.js";
+import { childEnv } from "./runtime.js";
 import { findExecutable } from "./setup.js";
 
 // A packaged companion's execPath is the companion itself, which would treat codex.js as an unknown command and exit.
@@ -31,7 +32,7 @@ export function codexCommand(env: NodeJS.ProcessEnv = process.env, platform: Nod
 export function readCodexUsage(timeoutMs = 20_000): Promise<ProviderUsage> {
   return new Promise((resolve, reject) => {
     const bin = codexCommand();
-    const child = spawn(bin.command, [...bin.args, "app-server", "--listen", "stdio://"], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+    const child = spawn(bin.command, [...bin.args, "app-server", "--listen", "stdio://"], { env: childEnv(bin), stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     let settled = false; let buffer = "";
     const finish = (error?: Error, result?: ProviderUsage) => {
       if (settled) return; settled = true; clearTimeout(timer); child.stdin.end(); child.kill();

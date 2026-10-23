@@ -5,6 +5,7 @@
 //   pnpm publish:release companion-v1.0.0 --run 12345     # use a specific (e.g. workflow_dispatch) run
 //   pnpm publish:release companion-v1.0.0 --dir <folder>  # use local `pnpm package` output instead (no attestations)
 //   pnpm publish:release companion-v1.0.0 --publish       # re-verify the existing draft and make it public
+//   pnpm publish:release companion-v1.0.0 --dir <folder> --no-desktop   # CLI binaries only (no desktop app builds)
 //
 // Pass --run <id> to choose a run explicitly (e.g. workflow_dispatch); without it only the tag's push run is used.
 // Downloaded binaries must carry a build-provenance attestation from this repository's release workflow for the
@@ -40,12 +41,17 @@ function gh(args: string[], options: { json?: boolean } = {}) {
   return options.json ? JSON.parse(result.stdout) : result.stdout;
 }
 
-/** Names every release must contain for the selected targets (binaries plus Linux archives). */
-export function expectedAssets(version: string, targets: string[]) {
+/** Desktop app builds (desktop/), one per target that has one: an AppImage for linux-x64, an installer for windows-x64. */
+export const desktopAssetName = (version: string, target: string) =>
+  ({ "linux-x64": `meterkat-desktop-${version}-linux-x64.AppImage`, "windows-x64": `meterkat-desktop-${version}-windows-x64-setup.exe` } as Record<string, string>)[target];
+
+/** Names every release must contain for the selected targets (binaries, Linux archives and, unless left out, desktop builds). */
+export function expectedAssets(version: string, targets: string[], desktop = true) {
   return targets.flatMap(target => {
     const [os, arch] = target.split("-") as [string, string];
     const name = releaseAssetName(version, os === "windows" ? "win32" : "linux", arch);
-    return os === "linux" ? [name, `${name}.tar.gz`] : [name];
+    const app = desktop ? desktopAssetName(version, target) : undefined;
+    return [...(os === "linux" ? [name, `${name}.tar.gz`] : [name]), ...(app ? [app] : [])];
   }).sort();
 }
 
@@ -101,8 +107,8 @@ function verifyProvenance(dir: string, names: string[], source: string, tag: str
   console.log(`Build provenance verified for ${names.length} files (${source}@${commit.slice(0, 12)}).`);
 }
 
-async function createDraft(tag: string, version: string, dir: string, targets: string[], repo: string, source?: string) {
-  const names = expectedAssets(version, targets);
+async function createDraft(tag: string, version: string, dir: string, targets: string[], repo: string, source?: string, desktop = true) {
+  const names = expectedAssets(version, targets, desktop);
   const present = new Set(readdirSync(dir));
   const missing = names.filter(n => !present.has(n));
   if (missing.length) throw new Error(`Missing release files: ${missing.join(", ")}`);
@@ -156,6 +162,7 @@ const releaseNotes = (version: string) => versionNotes(version) + `Single-file M
 
 - Windows: run \`meterkat-companion-${version}-windows-x64.exe setup\` from a terminal. The build is not code-signed: in SmartScreen choose **More info → Run anyway**.
 - Linux: \`tar -xzf meterkat-companion-${version}-linux-<arch>.tar.gz && ./meterkat setup\`.
+- Desktop app with a window and tray icon (optional, instead of the command line): \`meterkat-desktop-${version}-windows-x64-setup.exe\` (per-user install, no admin) or \`meterkat-desktop-${version}-linux-x64.AppImage\`. It checks for new versions; install them by downloading the new build.
 
 Installed companions update themselves after checking the Ed25519 signature on SHA256SUMS. To verify by hand: \`sha256sum -c SHA256SUMS --ignore-missing\`; the signature check is described in [docs/installation.md](https://github.com/Fade97/meterkat-companion/blob/main/docs/installation.md#verify-a-download-by-hand). Build provenance: \`gh attestation verify <file> -R Fade97/meterkat-companion\`.
 
@@ -168,7 +175,7 @@ function versionNotes(version: string) {
 
 if (process.argv[1] && resolve(process.argv[1]).endsWith(join("scripts", "publish-release.ts"))) {
   const { values, positionals } = parseArgs({ allowPositionals: true, options: {
-    run: { type: "string" }, dir: { type: "string" }, targets: { type: "string" }, publish: { type: "boolean", default: false },
+    run: { type: "string" }, dir: { type: "string" }, targets: { type: "string" }, publish: { type: "boolean", default: false }, "no-desktop": { type: "boolean", default: false },
     repo: { type: "string", default: "Fade97/meterkat-companion" }, source: { type: "string", default: "Fade97/meterkat-companion" },
   } });
   const tag = positionals[0] ?? "";
@@ -184,7 +191,7 @@ if (process.argv[1] && resolve(process.argv[1]).endsWith(join("scripts", "publis
       dir = mkdtempSync(join(tmpdir(), "meterkat-artifacts-"));
       gh(["run", "download", values.run ?? findRun(values.source!, tag), "-R", values.source!, "-n", "meterkat-companion-release", "-D", dir]);
     }
-    try { await createDraft(tag, version, dir, targets, values.repo!, download ? values.source! : undefined); }
+    try { await createDraft(tag, version, dir, targets, values.repo!, download ? values.source! : undefined, !values["no-desktop"]); }
     finally { if (download) rmSync(dir, { recursive: true, force: true }); }
   }
 }

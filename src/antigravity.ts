@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { readState, writeState } from "./state.js";
 import type { MeterUsage, ProviderUsage } from "../shared/snapshot.js";
+import { childEnv } from "./runtime.js";
 
 /**
  * Antigravity quotas from the native CLI's zero-turn print-mode `/usage` answer. Its JSON layout is
@@ -126,7 +127,7 @@ function run(args: string[], timeoutMs: number): Promise<Run> {
     let child: ChildProcess;
     try {
       // New session without a terminal and stdin closed: a signed-out CLI cannot read a pasted auth code.
-      child = spawn(bin.command, [...bin.args, ...args], { cwd, env: childEnvironment(), stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
+      child = spawn(bin.command, [...bin.args, ...args], { cwd, env: childEnv(bin, childEnvironment()), stdio: ["ignore", "pipe", "pipe"], detached: process.platform !== "win32", windowsHide: true });
     } catch {
       // Windows refuses `.cmd` shims without a shell (EINVAL): treated like a missing CLI.
       cleanup(); resolve({ code: null, stdout: "", timedOut: false, tooLarge: false, missing: true, authRequired: false }); return;

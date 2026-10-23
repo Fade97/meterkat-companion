@@ -1,2 +1,7 @@
+packages:
+  - desktop
 allowBuilds:
   esbuild: true
+  electron: true
+  # Squirrel.Windows helper pulled in by electron-builder; the NSIS target does not use it.
+  electron-winstaller: false
