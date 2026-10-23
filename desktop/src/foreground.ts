@@ -1,0 +1,218 @@
+// Which window is in front, and how bright the screen is next to the island. Windows reads both through Win32 (koffi);
+// Linux under X11 asks xprop and /proc and samples a screen thumbnail. Wayland exposes neither, so the island is off there.
+import { execFile } from "node:child_process";
+import { readdirSync, readFileSync } from "node:fs";
+import { promisify } from "node:util";
+import type { ForegroundWindow } from "./ai-apps.js";
+import { isTerminal } from "./ai-apps.js";
+import type { IslandTone } from "./ipc.js";
+
+const run = promisify(execFile);
+export type Point = { x: number; y: number };
+export type Rect = { x: number; y: number; width: number; height: number };
+/** A foreground window and a point on it (DIP), used to pick the display the island goes to. */
+export type ForegroundReading = { window: ForegroundWindow; anchor: Point | null; pid: number };
+
+export interface ForegroundProbe {
+  read(): Promise<ForegroundReading | null>;
+  /** Relative luminance (0–1) per screen point in DIP; null where it cannot be read. */
+  luminance(points: Point[], displayId: number): Promise<(number | null)[]>;
+}
+
+/** Why the island cannot run here, or null when it can. */
+export function unsupportedReason(platform: string, env: NodeJS.ProcessEnv): string | null {
+  if (platform === "win32") return null;
+  if (platform !== "linux") return "Not available on this system.";
+  if (env.XDG_SESSION_TYPE === "wayland" || (env.WAYLAND_DISPLAY && !env.DISPLAY)) return "Not available on Wayland: it does not tell apps which window is in front.";
+  return env.DISPLAY ? null : "Needs an X11 desktop session.";
+}
+
+/** sRGB → relative luminance, as in WCAG. */
+export function luminance(r: number, g: number, b: number) {
+  const lin = (c: number) => { const v = c / 255; return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4; };
+  return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b);
+}
+
+/** Hysteresis between the two tones so a mid-grey title bar does not make the drop flip back and forth. */
+export function nextTone(current: IslandTone, values: (number | null)[]): IslandTone {
+  const known = values.filter((v): v is number => v !== null);
+  if (!known.length) return current;
+  const average = known.reduce((sum, v) => sum + v, 0) / known.length;
+  if (average > 0.4) return "ink";
+  if (average < 0.25) return "white";
+  return current;
+}
+
+// ---- Linux (X11) -----------------------------------------------------------------------------------------------
+
+/** `xprop -root _NET_ACTIVE_WINDOW` → the window id, or null when no window has the focus. */
+export function parseActiveWindow(output: string): string | null {
+  const id = /window id # (0x[0-9a-f]+)/i.exec(output)?.[1];
+  return id && Number(id) !== 0 ? id : null;
+}
+
+/** `xprop -id <id> WM_CLASS _NET_WM_NAME _NET_WM_PID _NET_WM_STATE` → class, title, pid and full-screen state. */
+export function parseWindowProps(output: string) {
+  const classes = /^WM_CLASS(?:\(\w+\))? = (.*)$/m.exec(output)?.[1]?.match(/"((?:[^"\\]|\\.)*)"/g)?.map(s => JSON.parse(s) as string) ?? [];
+  const titleRaw = /^_NET_WM_NAME(?:\(\w+\))? = (".*")$/m.exec(output)?.[1];
+  let title = "";
+  try { title = titleRaw ? JSON.parse(titleRaw) as string : ""; } catch { title = titleRaw?.slice(1, -1) ?? ""; }
+  const pid = Number(/^_NET_WM_PID(?:\(\w+\))? = (\d+)$/m.exec(output)?.[1] ?? 0);
+  const fullscreen = /^_NET_WM_STATE(?:\(\w+\))? = .*_NET_WM_STATE_FULLSCREEN/m.test(output);
+  // WM_CLASS is "instance", "Class"; the class is the stable app name (Firefox's instance is "Navigator").
+  return { app: classes[1] ?? classes[0] ?? "", title, pid, fullscreen };
+}
+
+/** Command lines of every process below `root`, read from /proc. */
+export function linuxDescendants(root: number, proc = "/proc", limit = 200): string[] {
+  const children = new Map<number, number[]>();
+  for (const entry of readdirSync(proc)) {
+    if (!/^\d+$/.test(entry)) continue;
+    try {
+      const stat = readFileSync(`${proc}/${entry}/stat`, "utf8");
+      const ppid = Number(stat.slice(stat.lastIndexOf(")") + 2).split(" ")[1]);
+      const list = children.get(ppid) ?? []; list.push(Number(entry)); children.set(ppid, list);
+    } catch { /* process ended */ }
+  }
+  const result: string[] = [];
+  const queue = [...(children.get(root) ?? [])];
+  for (let i = 0; i < queue.length && result.length < limit; i++) {
+    const pid = queue[i]!;
+    try { result.push(readFileSync(`${proc}/${pid}/cmdline`, "utf8").split("\0").filter(Boolean).join(" ")); } catch { /* ended */ }
+    queue.push(...(children.get(pid) ?? []));
+  }
+  return result;
+}
+
+type Thumbnail = { displayId: string; width: number; height: number; bitmap: Buffer; scale: number; origin: Point };
+export type ScreenCapture = (displayId: number) => Promise<Thumbnail | null>;
+
+export function linuxProbe(capture: ScreenCapture, cursor: () => Point): ForegroundProbe {
+  return {
+    async read() {
+      const id = parseActiveWindow((await run("xprop", ["-root", "-notype", "_NET_ACTIVE_WINDOW"], { timeout: 2000 })).stdout);
+      if (!id) return null;
+      const props = parseWindowProps((await run("xprop", ["-id", id, "-notype", "WM_CLASS", "_NET_WM_NAME", "_NET_WM_PID", "_NET_WM_STATE"], { timeout: 2000 })).stdout);
+      const descendants = props.pid && isTerminal(props.app) ? linuxDescendants(props.pid) : [];
+      return { window: { app: props.app, title: props.title, descendants, fullscreen: props.fullscreen }, anchor: cursor(), pid: props.pid };
+    },
+    async luminance(points, displayId) {
+      const shot = await capture(displayId);
+      return points.map(p => shot ? pixelLuminance(shot, p) : null);
+    },
+  };
+}
+
+function pixelLuminance(shot: Thumbnail, p: Point): number | null {
+  const x = Math.round((p.x - shot.origin.x) * shot.scale), y = Math.round((p.y - shot.origin.y) * shot.scale);
+  if (x < 0 || y < 0 || x >= shot.width || y >= shot.height) return null;
+  const i = (y * shot.width + x) * 4; // BGRA
+  return luminance(shot.bitmap[i + 2]!, shot.bitmap[i + 1]!, shot.bitmap[i]!);
+}
+
+// ---- Windows (Win32 through koffi) -----------------------------------------------------------------------------
+
+/** The part of koffi the bindings use. */
+export interface KoffiModule {
+  load(path: string): { func(definition: string): (...args: any[]) => any };
+  struct(name: string, fields: Record<string, unknown>): unknown;
+  array(type: string, length: number, hint?: string): unknown;
+  sizeof(type: unknown): number;
+  address(pointer: unknown): bigint;
+}
+
+type Win32Rect = { left: number; top: number; right: number; bottom: number };
+const MONITOR_DEFAULTTONEAREST = 2, TH32CS_SNAPPROCESS = 2, CLR_INVALID = 0xffffffff;
+
+export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, toScreen: (point: Point) => Point): ForegroundProbe {
+  const user32 = koffi.load("user32.dll"), gdi32 = koffi.load("gdi32.dll"), kernel32 = koffi.load("kernel32.dll");
+  const RECT = koffi.struct("MK_RECT", { left: "int32", top: "int32", right: "int32", bottom: "int32" });
+  const MONITORINFO = koffi.struct("MK_MONITORINFO", { cbSize: "uint32", rcMonitor: RECT, rcWork: RECT, dwFlags: "uint32" });
+  const ENTRY = koffi.struct("MK_PROCESSENTRY32W", {
+    dwSize: "uint32", cntUsage: "uint32", th32ProcessID: "uint32", th32DefaultHeapID: "uintptr_t", th32ModuleID: "uint32",
+    cntThreads: "uint32", th32ParentProcessID: "uint32", pcPriClassBase: "int32", dwFlags: "uint32", szExeFile: koffi.array("char16_t", 260, "String"),
+  });
+  const getForegroundWindow = user32.func("void * __stdcall GetForegroundWindow()");
+  const getShellWindow = user32.func("void * __stdcall GetShellWindow()");
+  const windowProcess = user32.func("uint32 __stdcall GetWindowThreadProcessId(void *hwnd, _Out_ uint32 *pid)");
+  const windowText = user32.func("int32 __stdcall GetWindowTextW(void *hwnd, void *text, int32 max)");
+  const className = user32.func("int32 __stdcall GetClassNameW(void *hwnd, void *name, int32 max)");
+  const windowRect = user32.func("int32 __stdcall GetWindowRect(void *hwnd, _Out_ MK_RECT *rect)");
+  const monitorFromWindow = user32.func("void * __stdcall MonitorFromWindow(void *hwnd, uint32 flags)");
+  const monitorInfo = user32.func("int32 __stdcall GetMonitorInfoW(void *monitor, _Inout_ MK_MONITORINFO *info)");
+  const getDC = user32.func("void * __stdcall GetDC(void *hwnd)");
+  const releaseDC = user32.func("int32 __stdcall ReleaseDC(void *hwnd, void *dc)");
+  const getPixel = gdi32.func("uint32 __stdcall GetPixel(void *dc, int32 x, int32 y)");
+  const snapshot = kernel32.func("void * __stdcall CreateToolhelp32Snapshot(uint32 flags, uint32 pid)");
+  const firstProcess = kernel32.func("int32 __stdcall Process32FirstW(void *snapshot, _Inout_ MK_PROCESSENTRY32W *entry)");
+  const nextProcess = kernel32.func("int32 __stdcall Process32NextW(void *snapshot, _Inout_ MK_PROCESSENTRY32W *entry)");
+  const closeHandle = kernel32.func("int32 __stdcall CloseHandle(void *handle)");
+
+  const text = (fn: (...args: any[]) => number, hwnd: unknown) => {
+    const buffer = Buffer.alloc(1024);
+    const length = fn(hwnd, buffer, 512);
+    return buffer.toString("utf16le", 0, Math.max(0, length) * 2);
+  };
+
+  function processes() {
+    const exe = new Map<number, string>(), children = new Map<number, number[]>();
+    const handle = snapshot(TH32CS_SNAPPROCESS, 0);
+    if (!handle || koffi.address(handle) === 0xffffffffffffffffn) return { exe, children };
+    try {
+      const entry: Record<string, unknown> = { dwSize: koffi.sizeof(ENTRY) };
+      for (let ok = firstProcess(handle, entry); ok; ok = nextProcess(handle, entry)) {
+        const pid = Number(entry.th32ProcessID), parent = Number(entry.th32ParentProcessID);
+        exe.set(pid, String(entry.szExeFile));
+        if (pid !== parent) { const list = children.get(parent) ?? []; list.push(pid); children.set(parent, list); }
+      }
+    } finally { closeHandle(handle); }
+    return { exe, children };
+  }
+
+  function descendants(root: number, tree: ReturnType<typeof processes>) {
+    const names = new Set<string>(), seen = new Set<number>([root]);
+    const queue = [...(tree.children.get(root) ?? [])];
+    for (let i = 0; i < queue.length && names.size < 64; i++) {
+      const pid = queue[i]!;
+      if (seen.has(pid)) continue;
+      seen.add(pid);
+      const name = tree.exe.get(pid);
+      if (name) names.add(name);
+      queue.push(...(tree.children.get(pid) ?? []));
+    }
+    return [...names];
+  }
+
+  return {
+    async read() {
+      const hwnd = getForegroundWindow();
+      if (!hwnd) return null;
+      const pidOut: number[] = [0];
+      windowProcess(hwnd, pidOut);
+      const pid = pidOut[0]!;
+      const rect = {} as Win32Rect, info = { cbSize: koffi.sizeof(MONITORINFO), rcMonitor: {} as Win32Rect, rcWork: {}, dwFlags: 0 };
+      const hasRect = !!windowRect(hwnd, rect) && !!monitorInfo(monitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST), info);
+      const cls = text(className, hwnd);
+      const shell = getShellWindow();
+      const desktop = (!!shell && koffi.address(hwnd) === koffi.address(shell)) || cls === "Progman" || cls === "WorkerW";
+      const m = info.rcMonitor;
+      const fullscreen = hasRect && !desktop && rect.left <= m.left && rect.top <= m.top && rect.right >= m.right && rect.bottom >= m.bottom;
+      const tree = processes();
+      const app = tree.exe.get(pid) ?? "";
+      const window: ForegroundWindow = { app, title: text(windowText, hwnd), descendants: isTerminal(app) ? descendants(pid, tree) : [], fullscreen };
+      const bounds = hasRect ? toDip({ x: rect.left, y: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top }) : null;
+      return { window, pid, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null };
+    },
+    async luminance(points) {
+      const dc = getDC(null);
+      if (!dc) return points.map(() => null);
+      try {
+        return points.map(p => {
+          const s = toScreen(p);
+          const color = getPixel(dc, Math.round(s.x), Math.round(s.y)) >>> 0;
+          return color === CLR_INVALID ? null : luminance(color & 0xff, (color >> 8) & 0xff, (color >> 16) & 0xff);
+        });
+      } finally { releaseDC(null, dc); }
+    },
+  };
+}

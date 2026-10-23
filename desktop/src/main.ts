@@ -14,7 +14,9 @@ import { isV2, pairingLinkV2, uploadV2, writerCall, type V2Config } from "../../
 import { readState, relayUrl, stateDirectory, writeState, type Config } from "../../src/state.js";
 import { automaticUpdates, checkForUpdate, compareVersions, setAutomatic, updateSettings, type Release } from "../../src/update.js";
 import { COMPANION_VERSION } from "../../src/version.js";
+import { unsupportedReason } from "./foreground.js";
 import { trayLines } from "./format.js";
+import { createIsland } from "./island.js";
 import { CHANNEL, type AppState, type Device, type ExternalLink, type Pairing, type SyncMode, type View } from "./ipc.js";
 import { autostartFile, HIDDEN_ARG, launchCommand, linuxAutostart, LOGIN_ITEM_NAME } from "./login-item.js";
 import { cleanUp, installation, launch, prepare, spawnDetached, UPDATED_ARG, VERSION_ARG, type Prepared } from "./self-update.js";
@@ -32,7 +34,7 @@ const LINKS: Record<Exclude<ExternalLink, "licenses">, string> = {
   terms: "https://meterkat.fabian-duerkop.de/terms",
   privacy: "https://meterkat.fabian-duerkop.de/privacy",
 };
-type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean };
+type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean; island?: boolean };
 
 const assets = join(app.getAppPath(), "assets");
 let win: BrowserWindow | null = null;
@@ -42,6 +44,7 @@ let tray: Tray | null = null;
 let quitting = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let pairingTimer: NodeJS.Timeout | null = null;
+let island: ReturnType<typeof createIsland> | null = null;
 const settings = () => readState<DesktopSettings>("desktop.json") ?? {};
 const saveSettings = (patch: DesktopSettings) => writeState("desktop.json", { ...settings(), ...patch });
 const sync: AppState["sync"] = { mode: "app", running: false, lastSuccess: null, error: null };
@@ -109,13 +112,21 @@ function state(): AppState {
     sync: sync.mode === "service" ? { ...sync, lastSuccess: data?.generatedAt ?? null } : { ...sync },
     autostart: { supported: autostart.supported, app: autostart.enabled, service: serviceInstalled },
     update: { ...update, automatic: automaticUpdates() },
+    island: { enabled: islandEnabled(), unsupported: island?.unsupported ?? unsupportedReason(process.platform, process.env) },
   };
+}
+
+const islandEnabled = () => settings().island !== false;
+function setIsland(enabled: boolean) {
+  saveSettings({ island: enabled });
+  island?.refresh(); changed();
 }
 
 function changed() {
   const current = state();
   if (win && !win.isDestroyed()) win.webContents.send(CHANNEL.stateChanged, current);
   buildTray(current);
+  island?.refresh();
 }
 
 // ---- Sync ------------------------------------------------------------------------------------------------------
@@ -330,6 +341,7 @@ function buildTray(current: AppState) {
     { label: "Connect a phone…", enabled: current.registration?.protocol === 2, click: () => showWindow("phones") },
     { type: "separator" },
     ...(current.autostart.supported ? [{ label: "Start at sign-in", type: "checkbox" as const, checked: current.autostart.app, click: (item: Electron.MenuItem) => { try { appAutostart().set(item.checked); } finally { changed(); } } }] : []),
+    ...(!current.island.unsupported ? [{ label: "Show island at the top edge", type: "checkbox" as const, checked: current.island.enabled, click: (item: Electron.MenuItem) => setIsland(item.checked) }] : []),
     ...updateItems(current.update),
     { type: "separator" },
     { label: "Quit Meterkat", click: () => app.quit() },
@@ -367,6 +379,7 @@ function registerIpc() {
   handle(CHANNEL.revoke, (id: unknown) => revokeDevice(String(id)));
   handle(CHANNEL.revokeAll, () => revokeAll());
   handle(CHANNEL.autostart, (enabled: unknown) => { try { appAutostart().set(enabled === true); } finally { changed(); } });
+  handle(CHANNEL.island, (enabled: unknown) => setIsland(enabled === true));
   handle(CHANNEL.takeOver, () => takeOver());
   handle(CHANNEL.checkUpdate, () => checkUpdate(true));
   handle(CHANNEL.installUpdate, () => installUpdate());
@@ -410,6 +423,11 @@ else {
     // The installer may still be finishing when it starts the app, so its download goes a little later
     // (unless the next update is already on its way).
     setTimeout(() => { if (!prepared && !preparing) cleanUp(install, join(app.getPath("userData"), "updates")); }, 30_000);
+    island = createIsland({
+      snapshot, enabled: islandEnabled, demo: process.env.METERKAT_ISLAND_DEMO === "1",
+      preload: join(__dirname, "island-preload.cjs"), page: join(__dirname, "island", "island.html"),
+    });
+    island.start();
     buildTray(state());
     void tick();
   });

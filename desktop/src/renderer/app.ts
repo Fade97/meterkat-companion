@@ -122,7 +122,11 @@ function settingsView() {
     : update.newer ? `<button class="btn primary" data-action="download">Download</button>`
     : `<button class="btn" data-action="check-update">Check now</button>`;
   const automatic = update.install === "auto" ? `<div class="card row"><div><div>Install updates automatically</div><div class="muted small">Signed releases only. Meterkat restarts by itself while it is in the tray.</div></div>${toggle("automatic-updates", update.automatic, "Install updates automatically")}</div>` : "";
+  const island = state.island.unsupported
+    ? `<div class="card"><div>Island</div><div class="muted small">${esc(state.island.unsupported)}</div></div>`
+    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`;
   return `<h2>Startup</h2>${service}${start}
+    <h2>On screen</h2>${island}
     <h2>Updates</h2>
     <div class="card"><div class="row"><div><div>Version ${esc(state.version)}</div><div class="muted small">${latest}</div></div>
       ${updateButton}</div></div>
@@ -238,6 +242,7 @@ document.addEventListener("change", event => {
   if (target.dataset.action === "setup-autostart") setupAutostart = target.checked;
   if (target.dataset.action === "automatic-updates") void api.setAutomaticUpdates(target.checked).catch(error => { settingsError = message(error); render(); });
   if (target.dataset.action === "autostart") void api.setAutostart(target.checked).catch(error => { settingsError = message(error); render(); });
+  if (target.dataset.action === "island") void api.setIsland(target.checked).catch(error => { settingsError = message(error); render(); });
 });
 
 async function register() {

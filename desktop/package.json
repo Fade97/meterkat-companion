@@ -23,6 +23,7 @@
     "electron": "44.7.0",
     "electron-builder": "26.15.3",
     "esbuild": "0.25.12",
+    "koffi": "2.16.3",
     "qrcode": "1.5.4",
     "tsx": "4.20.6",
     "typescript": "5.9.3"
@@ -32,6 +33,7 @@
     "productName": "Meterkat",
     "directories": { "output": "release" },
     "files": ["dist/**", "!dist/THIRD_PARTY_NOTICES.txt", "assets/icon.png", "assets/tray.png", "assets/tray@2x.png", "package.json", "!node_modules{,/**}"],
+    "asarUnpack": ["dist/node_modules/koffi/**"],
     "extraResources": [{ "from": "../LICENSE", "to": "LICENSE" }, { "from": "dist/THIRD_PARTY_NOTICES.txt", "to": "THIRD_PARTY_NOTICES.txt" }],
     "icon": "assets/icon.png",
     "linux": { "target": ["AppImage"], "category": "Utility", "artifactName": "meterkat-desktop-${version}-linux-x64.${ext}" },

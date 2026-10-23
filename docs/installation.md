@@ -89,6 +89,14 @@ On first start a short setup checks your AI tools, registers with the relay (hos
 - **Restart:** while Meterkat sits in the tray it restarts into the new version by itself (hidden again). With the window open it waits until you close the window, or choose **Restart to update** in the settings or the tray menu.
 - **Opt-out:** the switch is shared with `meterkat update disable|enable` (same state directory). Off, the app still checks daily and offers **Update now**; `AI_USAGE_NO_UPDATE=1` turns off the check as well.
 
+**Island:** while Claude, Codex or T3 Code is in front, a small Meterkat drop hangs from the top edge of that screen. It is ink with the sand mark over light backgrounds and white with the ink mark over dark ones. It opens into a short notice when a quota rises by 10 points or crosses 50, 75 or 90 %, 60, 30, 10, 5 and 1 minutes before a used window resets, and once after the reset. It counts as in front:
+
+- the Claude, Codex, ChatGPT and T3 Code apps
+- a terminal (or VS Code/Cursor) running `claude` or `codex`
+- a browser tab whose title ends in Claude, Codex or ChatGPT (ChatGPT chats carry only their own title, so only its start page counts)
+
+The island never takes clicks or focus, and it hides over full-screen apps. Turn it off under **Settings → Show the island** or in the tray menu. It works on Windows and on Linux with X11. Wayland does not tell apps which window is in front, so the island is off there. Linux reads the foreground window with `xprop`; Windows uses Win32 calls through [koffi](https://koffi.dev/). `METERKAT_ISLAND_DEMO=1` shows the island with sample notices regardless of the foreground window, for trying it out.
+
 Desktop sessions don't read your shell profile, so on Linux the app asks your login shell (`$SHELL -ilc`) for its `PATH` once at start to find `claude`, `codex` and `agy`. `AI_USAGE_CLAUDE_BIN`, `AI_USAGE_CODEX_BIN` and `AI_USAGE_ANTIGRAVITY_BIN` still override the lookup.
 
 ## Rename from "AI usage"
