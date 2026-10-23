@@ -7,7 +7,7 @@ import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
 import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseWindowProps, unsupportedReason } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
-import { islandFootprint, islandPath, ISLAND_SIZES, samplePoints } from "../src/island-shape.js";
+import { hits, islandFootprint, islandPath, ISLAND_SIZES, samplePoints } from "../src/island-shape.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60_000;
@@ -25,6 +25,23 @@ test("the outline leaves the edge tangentially and meets the circle at its wides
 test("a pill keeps its straight bottom between the two end caps", () => {
   const d = islandPath({ cx: 200, top: 2, w: 300, h: 50, fillet: 19 });
   assert.match(d, /^M31,-2L31,0A19,27 0 0 1 50,27A25,25 0 0 0 75,52L325,52A25,25 0 0 0 350,27A19,27 0 0 1 369,0L369,-2Z$/);
+});
+
+test("the panel is a rounded rectangle whose sides run straight down from the side arcs", () => {
+  const d = islandPath({ cx: 200, top: 2, w: 380, h: 200, fillet: 19, radius: 22 });
+  // Upper corner centres 24 below the edge (gap 2 + radius 22), lower ones at 202 - 22 = 180.
+  assert.equal(d, "M-9,-2L-9,0A19,24 0 0 1 10,24L10,180A22,22 0 0 0 32,202L368,202A22,22 0 0 0 390,180L390,24A19,24 0 0 1 409,0L409,-2Z");
+  assert.equal(islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }), 418);
+  // A radius above h / 2 is the pill again.
+  assert.equal(islandPath({ cx: 200, top: 2, w: 300, h: 50, fillet: 19, radius: 80 }), islandPath({ cx: 200, top: 2, w: 300, h: 50, fillet: 19 }));
+});
+
+test("the pointer is on the island only inside its hit area", () => {
+  const bounds = { x: 740, y: 0 }, area = { x: 200, y: 0, width: 40, height: 36 };
+  assert.equal(hits(bounds, area, { x: 960, y: 10 }), true);
+  assert.equal(hits(bounds, area, { x: 960, y: 37 }), false);
+  assert.equal(hits(bounds, area, { x: 939, y: 10 }), false);
+  assert.equal(hits(bounds, null, { x: 960, y: 10 }), false);
 });
 
 const provider = (id: string, five: number, resetsAt: number, state: ProviderUsage["state"] = "ok"): ProviderUsage =>
@@ -146,9 +163,9 @@ test("the drop turns ink on light backgrounds and white on dark ones, with a dea
   assert.equal(nextTone("white", [null, null]), "white");
 });
 
-test("brightness is sampled beside the widest pill, never under it", () => {
+test("brightness is sampled beside the widest shape, never under it", () => {
   const points = samplePoints({ bounds: { x: 1920, y: 0, width: 1920 } });
-  const half = islandFootprint({ cx: 0, ...ISLAND_SIZES.usage }) / 2;
+  const half = Math.max(...Object.values(ISLAND_SIZES).map(size => islandFootprint({ cx: 0, ...size }))) / 2;
   assert.equal(points.length, 8);
   assert.ok(points.every(p => Math.abs(p.x - (1920 + 960)) > half && p.y >= 0 && p.y < 20));
 });

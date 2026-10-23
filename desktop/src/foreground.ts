@@ -103,6 +103,26 @@ export function linuxProbe(capture: ScreenCapture, cursor: () => Point): Foregro
   };
 }
 
+/**
+ * The pointer in physical pixels, asked from the X server directly: on X11, Electron's screen.getCursorScreenPoint()
+ * keeps returning a stale point unless one of the app's own windows receives pointer events, and the island's window
+ * lets them through. Throws when libX11 cannot be loaded or the display not opened.
+ */
+export function x11Pointer(koffi: KoffiModule): () => Point | null {
+  const x11 = koffi.load("libX11.so.6");
+  const openDisplay = x11.func("void *XOpenDisplay(const char *name)");
+  const rootWindow = x11.func("unsigned long XDefaultRootWindow(void *display)");
+  const queryPointer = x11.func("int XQueryPointer(void *display, unsigned long window, _Out_ unsigned long *root, _Out_ unsigned long *child, _Out_ int *rootX, _Out_ int *rootY, _Out_ int *winX, _Out_ int *winY, _Out_ unsigned int *mask)");
+  const display = openDisplay(null);
+  if (!display) throw new Error("Cannot open the X display");
+  const root = rootWindow(display);
+  return () => {
+    const x = [0], y = [0];
+    // False when the pointer is on another screen of the display: there is no point on this one.
+    return queryPointer(display, root, [0], [0], x, y, [0], [0], [0]) ? { x: x[0]!, y: y[0]! } : null;
+  };
+}
+
 function pixelLuminance(shot: Thumbnail, p: Point): number | null {
   const x = Math.round((p.x - shot.origin.x) * shot.scale), y = Math.round((p.y - shot.origin.y) * shot.scale);
   if (x < 0 || y < 0 || x >= shot.width || y >= shot.height) return null;

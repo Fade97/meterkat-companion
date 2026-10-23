@@ -1,5 +1,6 @@
 /* The island page: transparent window, the drop is the SVG outline, the content sits in a box that follows it. */
 html, body { margin: 0; width: 100%; height: 100%; overflow: hidden; background: transparent; }
+body.hover { cursor: pointer; }
 body {
   font: 600 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Ubuntu, sans-serif;
   -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
@@ -57,7 +58,31 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
 .text { white-space: nowrap; }
 .value { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
 
+/* The panel: every provider at a glance. Laid out at full width from the start, so its height can be measured. */
+.panel { top: 0; left: 50%; width: 380px; max-height: 520px; margin-left: -190px; padding: 13px 18px 15px; box-sizing: border-box; transform: none;
+  transition: opacity .12s ease; overflow: hidden; }
+.panel.on { opacity: 1; transition: opacity .22s ease .16s; }
+.panel > * { transform: translateY(-4px); transition: transform .12s ease; }
+.panel.on > * { transform: none; transition: transform .45s var(--ease-out) .16s; }
+.panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+.panel-head .mark { width: 12px; height: 14px; flex: none; fill: var(--logo); transition: fill .45s ease; }
+.panel-head .title { font-size: 13px; }
+.panel-head .meta, .panel .muted { color: var(--muted); font-weight: 500; }
+.panel-head .meta { margin-left: auto; font-size: 11.5px; }
+.prov { margin-top: 10px; }
+.prov-head { display: flex; align-items: center; gap: 7px; font-size: 13px; }
+.prov-head .pglyph { width: 15px; height: 15px; flex: none; fill: var(--provider); }
+.prov-head .state { margin-left: auto; font-size: 11.5px; color: var(--muted); font-weight: 500; }
+.meter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 8px; row-gap: 4px; margin-top: 7px; }
+.meter-row .label { font-size: 12px; color: var(--muted); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.meter-row .reset { font-size: 11.5px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.meter-row .num { min-width: 34px; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.meter { grid-column: 1 / -1; position: relative; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.meter i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--provider); }
+.panel .note { margin-top: 10px; font-size: 12px; }
+
 @media (prefers-reduced-motion: reduce) {
+  .panel > *, .panel.on > * { transform: none !important; transition: none !important; }
   .usage > *, .notice > *, .on > * { filter: none !important; transform: none !important; transition-delay: 0s !important; }
   .logo, .logo.on { transform: translate(-50%, -50%); }
   .bar .fill.landed, .notice.urgent.on .ring { animation: none; }

@@ -34,11 +34,12 @@ await build({
 });
 for (const file of ["island.html", "island.css"]) cpSync(join(root, "src", "island-page", file), join(dist, "island", file));
 
-// koffi's loader and its Windows x64 binary; electron-builder unpacks it from the asar (asarUnpack in package.json).
+// koffi's loader and its binaries for the two desktop builds (Win32 on Windows, the X11 pointer on Linux);
+// electron-builder unpacks them from the asar (asarUnpack in package.json).
 const koffi = join(root, "node_modules", "koffi");
 const koffiOut = join(dist, "node_modules", "koffi");
 for (const file of ["package.json", "index.js", "indirect.js", "LICENSE.txt"]) cpSync(join(koffi, file), join(koffiOut, file));
-cpSync(join(koffi, "build", "koffi", "win32_x64", "koffi.node"), join(koffiOut, "build", "koffi", "win32_x64", "koffi.node"));
+for (const target of ["win32_x64", "linux_x64"]) cpSync(join(koffi, "build", "koffi", target, "koffi.node"), join(koffiOut, "build", "koffi", target, "koffi.node"));
 
 // Licence texts of the npm packages bundled into dist (Electron and Chromium ship their own next to the executable).
 const packages = new Set<string>();

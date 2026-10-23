@@ -1,7 +1,7 @@
 // The window: setup wizard until the companion is registered, then Overview, Phones and Settings.
 // All data comes through window.meterkat (preload.ts); the page has no Node or network access of its own.
-import { ago, bars, percent, providerColor, providerGroups, providerMark, providerName, resetText } from "../format.js";
-import type { AppState, Device, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
+import { ago, bars, percent, providerColor, providerGroups, providerMark, providerName, resetText, shownPercent } from "../format.js";
+import type { AppState, BarMode, Device, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
 
 declare global { interface Window { meterkat: MeterkatApi } }
 const api = window.meterkat;
@@ -54,7 +54,8 @@ function overview() {
   const cards = shown.map(p => {
     const badge = p.state === "ok" ? `<span class="badge ok">Live</span>` : p.state === "auth_required" ? `<span class="badge warn">Sign-in needed</span>` : `<span class="badge">Unavailable</span>`;
     const rows = bars(p).map(b => {
-      return `<div class="bar"><span class="bar-label">${esc(b.label)}</span><span class="bar-value">${percent(b.usedPercent)}</span><div class="track" role="meter" aria-label="${esc(b.label)} used" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(b.usedPercent)}"><div class="fill" data-width="${Math.min(100, Math.max(0, b.usedPercent))}"></div></div><span class="bar-reset">${esc(resetText(b.resetsAt))}</span></div>`;
+      const value = shownPercent(b.usedPercent, state.bars);
+      return `<div class="bar"><span class="bar-label">${esc(b.label)}</span><span class="bar-value">${percent(value)}</span><div class="track" role="meter" aria-label="${esc(b.label)} ${state.bars}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${Math.round(value)}"><div class="fill" data-width="${value}"></div></div><span class="bar-reset">${esc(resetText(b.resetsAt))}</span></div>`;
     }).join("");
     const observed = p.sampledAt ? `Observed ${ago(p.sampledAt)}` : "No quota observed yet";
     return `<section class="card" data-color="${esc(providerColor(p.id))}"><div class="card-head"><strong class="provider">${providerMark(p.id)}${esc(providerName(p.id))}</strong>${badge}</div>${rows || `<p class="muted small">No quota data. Check that ${esc(providerName(p.id))} is installed and signed in.</p>`}<div class="observed">${esc(observed)}</div></section>`;
@@ -65,7 +66,8 @@ function overview() {
   const footer = sync.mode === "service"
     ? `<p class="muted small gap">The CLI companion syncs in the background on this computer; this window shows its data. You can let the app take over in Settings.</p>`
     : `<div class="sync-bar"><span class="muted small">${sync.error ? `<span class="error">${esc(sync.error)}</span>` : "Syncs every minute while Meterkat runs, also from the tray."}</span><button class="btn" data-action="sync" ${sync.running ? "disabled" : ""}>${sync.running ? `<span class="spinner"></span>` : "Sync now"}</button></div>`;
-  return `<h2>Your quota</h2>${body}${footer}`;
+  const meaning = cards ? `<p class="muted small">Coloured bars show ${state.bars} quota. Times show when each limit resets.</p>` : "";
+  return `<h2>Your quota</h2>${meaning}${body}${footer}`;
 }
 
 // ---- Phones ---------------------------------------------------------------------------------------------------
@@ -124,9 +126,11 @@ function settingsView() {
   const automatic = update.install === "auto" ? `<div class="card row"><div><div>Install updates automatically</div><div class="muted small">Signed releases only. Meterkat restarts by itself while it is in the tray.</div></div>${toggle("automatic-updates", update.automatic, "Install updates automatically")}</div>` : "";
   const island = state.island.unsupported
     ? `<div class="card"><div>Island</div><div class="muted small">${esc(state.island.unsupported)}</div></div>`
-    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`;
+    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets; click it to see every provider.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`;
+  const mode = (value: BarMode, label: string) => `<button class="${state.bars === value ? "on" : ""}" data-action="bar-mode" data-mode="${value}" role="radio" aria-checked="${state.bars === value}">${label}</button>`;
+  const barMode = `<div class="card row"><div><div>Coloured bars show</div><div class="muted small">In this window, the island and the tray.</div></div><div class="segmented" role="radiogroup" aria-label="Coloured bars show">${mode("used", "Used")}${mode("remaining", "Remaining")}</div></div>`;
   return `<h2>Startup</h2>${service}${start}
-    <h2>On screen</h2>${island}
+    <h2>On screen</h2>${barMode}${island}
     <h2>Updates</h2>
     <div class="card"><div class="row"><div><div>Version ${esc(state.version)}</div><div class="muted small">${latest}</div></div>
       ${updateButton}</div></div>
@@ -223,6 +227,7 @@ document.addEventListener("click", event => {
       case "check-update": updateBusy = true; render(); try { await api.checkUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
       case "install-update": updateBusy = true; render(); try { await api.installUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
       case "download": await api.open("releases"); break;
+      case "bar-mode": try { await api.setBarMode(target.dataset.mode === "remaining" ? "remaining" : "used"); } catch (error) { settingsError = message(error); render(); } break;
       case "quit": api.quit(); break;
       case "to-relay": step = "relay"; render(); break;
       case "register": await register(); break;
