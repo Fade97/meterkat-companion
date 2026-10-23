@@ -1,16 +1,26 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { delimiter, join } from "node:path";
+import { isSea } from "node:sea";
+import { join } from "node:path";
 import { fromCodexLimits, type ProviderUsage } from "../shared/snapshot.js";
+import { findExecutable } from "./setup.js";
 
-export function codexCommand(): { command: string; args: string[] } {
-  const configured = process.env.AI_USAGE_CODEX_BIN;
-  if (configured) return configured.endsWith(".js") ? { command: process.execPath, args: [configured] } : { command: configured, args: [] };
-  if (process.platform === "win32") {
-    for (const directory of (process.env.PATH ?? "").split(delimiter)) {
+// A packaged companion's execPath is the companion itself, which would treat codex.js as an unknown command and exit.
+const nodeFor = (env: NodeJS.ProcessEnv, platform: NodeJS.Platform, packaged: boolean) => {
+  const node = packaged ? findExecutable("node", env, platform) : process.execPath;
+  if (!node) throw new Error("Codex needs Node.js on PATH; set AI_USAGE_CODEX_BIN to its native executable");
+  return node;
+};
+
+export function codexCommand(env: NodeJS.ProcessEnv = process.env, platform: NodeJS.Platform = process.platform, packaged = isSea()): { command: string; args: string[] } {
+  const configured = env.AI_USAGE_CODEX_BIN;
+  if (configured) return configured.endsWith(".js") ? { command: nodeFor(env, platform, packaged), args: [configured] } : { command: configured, args: [] };
+  if (platform === "win32") {
+    for (const directory of (env.PATH ?? env.Path ?? "").split(";")) {
+      if (!directory) continue;
       if (existsSync(join(directory, "codex.exe"))) return { command: join(directory, "codex.exe"), args: [] };
       const script = join(directory, "node_modules", "@openai", "codex", "bin", "codex.js");
-      if (existsSync(script)) return { command: process.execPath, args: [script] };
+      if (existsSync(script)) return { command: nodeFor(env, platform, packaged), args: [script] };
     }
     throw new Error("Codex not found; set AI_USAGE_CODEX_BIN to its native executable or codex.js");
   }
