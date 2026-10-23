@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'">
+  <title>Meterkat island</title>
+  <link rel="stylesheet" href="island.css">
+</head>
+<body class="ink">
+  <svg class="shape" aria-hidden="true"><path id="outline"/></svg>
+  <div id="box" class="box" aria-live="polite">
+    <svg class="logo" viewBox="44 30 168 196" aria-label="Meterkat"><path fill-rule="evenodd" d="M52 70A34 34 0 0 1 120 70V186A34 34 0 0 1 52 186Z M81 74A15 15 0 1 0 111 74A15 15 0 1 0 81 74Z M136 118A34 34 0 0 1 204 118V186A34 34 0 0 1 136 186Z M165 122A15 15 0 1 0 195 122A15 15 0 1 0 165 122Z"/></svg>
+    <div class="usage">
+      <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd"/></svg>
+      <div class="bar"><b class="fill"></b><i class="was"></i></div>
+      <span class="pct"></span>
+    </div>
+    <div class="notice">
+      <span class="badge">
+        <svg class="ring" viewBox="0 0 32 32" aria-hidden="true"><circle class="track" cx="16" cy="16" r="14"/><circle class="arc" cx="16" cy="16" r="14"/><path class="check" d="M10.5 16.5l3.6 3.6 7.4-7.6"/></svg>
+        <svg class="glyph" viewBox="0 0 24 24" aria-hidden="true"><path fill-rule="evenodd"/></svg>
+      </span>
+      <span class="text"></span>
+      <span class="value"></span>
+    </div>
+  </div>
+  <script src="island.js"></script>
+</body>
+</html>

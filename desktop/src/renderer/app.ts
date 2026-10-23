@@ -113,7 +113,11 @@ function settingsView() {
   const service = autostart.service || running ? `<div class="notice"><p>${serviceText} Two companions would send the same data twice.</p><button class="btn" data-action="take-over">Let the app sync instead</button></div>` : "";
   const start = autostart.supported ? `<div class="card row"><div><div>Start at sign-in</div><div class="muted small">Opens hidden in the tray and keeps your phone up to date.</div></div>${toggle("autostart", autostart.app, "Start at sign-in")}</div>` : "";
   const latest = update.newer ? `Meterkat ${esc(update.latest)} is available.` : update.latest ? "You have the latest version." : update.error ? `<span class="error">${esc(update.error)}</span>` : "Not checked yet.";
+  const island = state.island.unsupported
+    ? `<div class="card"><div>Island</div><div class="muted small">${esc(state.island.unsupported)}</div></div>`
+    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`;
   return `<h2>Startup</h2>${service}${start}
+    <h2>On screen</h2>${island}
     <h2>Updates</h2>
     <div class="card"><div class="row"><div><div>Version ${esc(state.version)}</div><div class="muted small">${latest}</div></div>
       ${update.newer ? `<button class="btn primary" data-action="download">Download</button>` : `<button class="btn" data-action="check-update" ${updateBusy ? "disabled" : ""}>${updateBusy ? `<span class="spinner"></span>` : "Check now"}</button>`}</div></div>
@@ -226,6 +230,7 @@ document.addEventListener("change", event => {
   if (target.dataset.action === "relay-choice") { customRelay = target.value === "custom"; setupError = null; render(); document.querySelector<HTMLInputElement>("#relay-url")?.focus(); }
   if (target.dataset.action === "setup-autostart") setupAutostart = target.checked;
   if (target.dataset.action === "autostart") void api.setAutostart(target.checked).catch(error => { settingsError = message(error); render(); });
+  if (target.dataset.action === "island") void api.setIsland(target.checked).catch(error => { settingsError = message(error); render(); });
 });
 
 async function register() {

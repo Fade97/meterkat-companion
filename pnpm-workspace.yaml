@@ -5,3 +5,5 @@ allowBuilds:
   electron: true
   # Squirrel.Windows helper pulled in by electron-builder; the NSIS target does not use it.
   electron-winstaller: false
+  # Prebuilt Node-API binaries ship in the package; nothing to compile.
+  koffi: false
