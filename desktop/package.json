@@ -1,7 +1,7 @@
 {
   "name": "meterkat-desktop",
   "productName": "Meterkat",
-  "version": "1.2.0-beta.2",
+  "version": "1.2.0-beta.3",
   "description": "Meterkat desktop companion: tray app that sends end-to-end encrypted AI quota snapshots to your phone.",
   "license": "MIT",
   "private": true,
