@@ -11,6 +11,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
+    env:
+      # Tests and the desktop bundle need no Electron runtime; the release workflow downloads it for packaging.
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
@@ -24,3 +27,6 @@ jobs:
       - run: pnpm typecheck
       - run: pnpm test
       - run: pnpm bundle
+      - run: pnpm --filter meterkat-desktop typecheck
+      - run: pnpm --filter meterkat-desktop test
+      - run: pnpm --filter meterkat-desktop build

@@ -18,6 +18,8 @@ tar -xzf meterkat-companion-<version>-linux-x64.tar.gz && ./meterkat setup
 .\meterkat-companion-<version>-windows-x64.exe setup
 ```
 
+Prefer a window? The **desktop app** (`meterkat-desktop-<version>-windows-x64-setup.exe` or `…-linux-x64.AppImage`) does the same with a setup wizard, a pairing QR in the window and a tray icon it collapses into when you close it: [docs/installation.md](docs/installation.md#desktop-app-window-and-tray-icon).
+
 `setup --dry-run` shows the plan without changing anything. Setup checks the AI tools, installs the binary for your user (no admin/root), registers with the relay, optionally enables autostart and shows a pairing QR code for the Meterkat app. Details, autostart, updates and manual verification: [docs/installation.md](docs/installation.md).
 
 Packaged builds update themselves once a day, but only to releases whose `SHA256SUMS` carries a valid Ed25519 signature by a key embedded in [`src/release-key.ts`](src/release-key.ts). From 1.0.2 on, every binary also has a GitHub build-provenance attestation tying it to this repository's [release workflow](.github/workflows/release.yml):
@@ -53,6 +55,8 @@ pnpm test                  # unit tests + protocol vector check
 pnpm meterkat inspect      # run from source
 pnpm bundle                # output/ai-usage.cjs for your own Node
 pnpm package               # single-file binary for this host (output/dist)
+pnpm --filter meterkat-desktop start        # desktop app from source (Electron)
+pnpm --filter meterkat-desktop dist:linux   # AppImage in desktop/release (Windows installer: dist:win on Windows)
 ```
 
 | Path | Contents |
@@ -61,6 +65,7 @@ pnpm package               # single-file binary for this host (output/dist)
 | `shared/` | Snapshot model and protocol v2 crypto (Web Crypto; also used by the relay and the app's test vectors) |
 | `protocol/` | Protocol v2 reference and test vectors |
 | `scripts/` | Packaging (Node SEA), release publishing, install scripts for the Node bundle |
+| `desktop/` | Desktop app (Electron): window, tray icon, setup wizard; reuses `src/` for collecting, relay and pairing |
 | `tests/` | `node:test` suites; CI runs them on Ubuntu and Windows |
 
 Releases: [docs/releasing.md](docs/releasing.md).

@@ -1,0 +1,41 @@
+{
+  "name": "meterkat-desktop",
+  "productName": "Meterkat",
+  "version": "1.0.2",
+  "description": "Meterkat desktop companion: tray app that sends end-to-end encrypted AI quota snapshots to your phone.",
+  "license": "MIT",
+  "private": true,
+  "author": "Fabian Dürkop",
+  "homepage": "https://meterkat.fabian-duerkop.de",
+  "main": "dist/main.cjs",
+  "type": "module",
+  "scripts": {
+    "build": "tsx scripts/build.ts",
+    "start": "tsx scripts/build.ts && electron .",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/*.test.ts",
+    "dist:linux": "tsx scripts/build.ts && electron-builder --linux --x64",
+    "dist:win": "tsx scripts/build.ts && electron-builder --win --x64"
+  },
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "1.5.6",
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3",
+    "esbuild": "0.25.12",
+    "qrcode": "1.5.4",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "build": {
+    "appId": "de.fabian-duerkop.meterkat",
+    "productName": "Meterkat",
+    "directories": { "output": "release" },
+    "files": ["dist/**", "!dist/THIRD_PARTY_NOTICES.txt", "assets/icon.png", "assets/tray.png", "assets/tray@2x.png", "package.json", "!node_modules{,/**}"],
+    "extraResources": [{ "from": "../LICENSE", "to": "LICENSE" }, { "from": "dist/THIRD_PARTY_NOTICES.txt", "to": "THIRD_PARTY_NOTICES.txt" }],
+    "icon": "assets/icon.png",
+    "linux": { "target": ["AppImage"], "category": "Utility", "artifactName": "meterkat-desktop-${version}-linux-x64.${ext}" },
+    "win": { "target": ["nsis"], "signAndEditExecutable": false, "artifactName": "meterkat-desktop-${version}-windows-x64-setup.${ext}" },
+    "nsis": { "oneClick": true, "perMachine": false, "runAfterFinish": true, "deleteAppDataOnUninstall": false }
+  }
+}

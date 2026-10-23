@@ -141,7 +141,9 @@ test("Windows packaging strips the Authenticode table so the build is unsigned r
 
 test("publishing requires every target file, agrees with the workflow checksums and signs only with an embedded key", async t => {
   const { checksumList, expectedAssets, signSums: signRelease } = await import("../scripts/publish-release.js");
-  assert.deepEqual(expectedAssets("1.0.0", ["windows-x64", "linux-x64"]), ["meterkat-companion-1.0.0-linux-x64", "meterkat-companion-1.0.0-linux-x64.tar.gz", "meterkat-companion-1.0.0-windows-x64.exe"].sort());
+  assert.deepEqual(expectedAssets("1.0.0", ["windows-x64", "linux-x64"], false), ["meterkat-companion-1.0.0-linux-x64", "meterkat-companion-1.0.0-linux-x64.tar.gz", "meterkat-companion-1.0.0-windows-x64.exe"].sort());
+  // Desktop builds exist for linux-x64 and windows-x64 only.
+  assert.deepEqual(expectedAssets("1.0.0", ["windows-x64", "linux-arm64"]), ["meterkat-companion-1.0.0-linux-arm64", "meterkat-companion-1.0.0-linux-arm64.tar.gz", "meterkat-companion-1.0.0-windows-x64.exe", "meterkat-desktop-1.0.0-windows-x64-setup.exe"].sort());
   const { dir } = sandbox(t);
   const names = expectedAssets("1.0.0", ["linux-x64"]);
   for (const name of names) writeFileSync(join(dir, name), `content of ${name}`);

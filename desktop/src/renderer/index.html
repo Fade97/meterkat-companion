@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data:">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Meterkat</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><path fill-rule="evenodd" d="M52 70A34 34 0 0 1 120 70V186A34 34 0 0 1 52 186Z M85 74A11 11 0 1 0 107 74A11 11 0 1 0 85 74Z M136 118A34 34 0 0 1 204 118V186A34 34 0 0 1 136 186Z M169 122A11 11 0 1 0 191 122A11 11 0 1 0 169 122Z"/></svg>
+      <span>Meterkat</span>
+    </div>
+    <div id="status" class="status" role="status" aria-live="polite"></div>
+  </header>
+  <main id="view"></main>
+  <nav id="tabs" class="tabs" hidden>
+    <button data-tab="overview">Overview</button>
+    <button data-tab="phones">Phones</button>
+    <button data-tab="settings">Settings</button>
+  </nav>
+  <script src="app.js"></script>
+</body>
+</html>

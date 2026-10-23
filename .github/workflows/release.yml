@@ -1,6 +1,6 @@
 name: Release
-# Builds the single-file Meterkat companion for every target, smoke-tests each binary on a matching runner,
-# attests its build provenance and writes SHA256SUMS. Nothing is published from here: tag pushes
+# Builds the single-file Meterkat companion for every target and the desktop app (desktop/) for Linux and Windows,
+# smoke-tests each CLI binary on a matching runner, attests every file's build provenance and writes SHA256SUMS. Nothing is published from here: tag pushes
 # (`companion-v<semver>`) and manual runs upload a `meterkat-companion-release` artifact, which the maintainer
 # verifies (including the attestations), signs (Ed25519, key never in CI) and publishes it as a release of this repository
 # with scripts/publish-release.ts (docs/releasing.md). Pull requests that touch the build only build and smoke-test.
@@ -8,7 +8,7 @@ on:
   push:
     tags: ['companion-v*']
   pull_request:
-    paths: ['src/**', 'shared/**', 'scripts/**', '.github/workflows/release.yml', 'package.json', 'pnpm-lock.yaml']
+    paths: ['src/**', 'shared/**', 'scripts/**', 'desktop/**', '.github/workflows/release.yml', 'package.json', 'pnpm-lock.yaml']
   workflow_dispatch:
     inputs:
       version:
@@ -37,6 +37,8 @@ jobs:
       id-token: write
       attestations: write
       artifact-metadata: write
+    env:
+      ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
     defaults:
       run:
         shell: bash
@@ -92,20 +94,70 @@ jobs:
           path: output/dist/meterkat-companion-*
           if-no-files-found: error
           retention-days: 3
+  desktop:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # AppImage on Linux; the NSIS installer needs Windows (on Linux it would need Wine).
+          - { target: linux-x64, os: ubuntu-latest, builder: --linux AppImage --x64, file: 'meterkat-desktop-*-linux-x64.AppImage' }
+          - { target: windows-x64, os: windows-latest, builder: --win nsis --x64, file: 'meterkat-desktop-*-windows-x64-setup.exe' }
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+        with:
+          version: 11.1.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '22.23.2'
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Resolve version
+        run: |
+          version="${VERSION#companion-v}"
+          [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]] || { echo "Invalid version $version" >&2; exit 1; }
+          echo "METERKAT_VERSION=$version" >> "$GITHUB_ENV"
+      - name: Build and package
+        working-directory: desktop
+        run: |
+          pnpm build
+          pnpm exec electron-builder ${{ matrix.builder }} --publish never -c.extraMetadata.version="$METERKAT_VERSION"
+          mkdir -p ../output/desktop && cp release/${{ matrix.file }} ../output/desktop/
+          ls -l ../output/desktop
+      - uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        if: github.event_name != 'pull_request'
+        with:
+          subject-path: output/desktop/meterkat-desktop-*
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: github.event_name != 'pull_request'
+        with:
+          name: desktop-${{ matrix.target }}
+          path: output/desktop/meterkat-desktop-*
+          if-no-files-found: error
+          retention-days: 3
   checksums:
-    needs: build
+    needs: [build, desktop]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
-          pattern: companion-*
+          pattern: '{companion,desktop}-*'
           path: dist
           merge-multiple: true
       - name: Checksums
         working-directory: dist
         run: |
-          sha256sum meterkat-companion-* > SHA256SUMS
+          sha256sum meterkat-companion-* meterkat-desktop-* > SHA256SUMS
           cat SHA256SUMS
       # Picked up by scripts/publish-release.ts, which verifies, signs and publishes to the releases repository
       # from the maintainer's machine.

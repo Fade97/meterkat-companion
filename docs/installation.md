@@ -69,6 +69,23 @@ openssl pkeyutl -verify -pubin -inkey meterkat-release.pub -rawin -in SHA256SUMS
 sha256sum -c SHA256SUMS --ignore-missing
 ```
 
+## Desktop app (window and tray icon)
+
+An optional alternative to the command line, with the same relay protocol and state. Download from the [releases](https://github.com/Fade97/meterkat-companion/releases) (1.0.3 and later):
+
+- **Windows:** `meterkat-desktop-<version>-windows-x64-setup.exe` installs for your user only (no admin) and starts Meterkat. Not code-signed: SmartScreen → **More info → Run anyway**.
+- **Linux:** `meterkat-desktop-<version>-linux-x64.AppImage`; `chmod +x` it and start it. Distributions that block unprivileged user namespaces need `--no-sandbox`.
+
+On first start a short setup checks your AI tools, registers with the relay (hosted relay or your own), offers to start at sign-in and shows the pairing QR code in the window. Afterwards the window shows your quota, paired phones (connect, remove) and settings (start at sign-in, update check, licences).
+
+**Tray:** closing or minimising the window collapses Meterkat into a tray icon; it keeps syncing every minute. The tray menu shows the quota per provider, syncs, opens the window, toggles start at sign-in and quits. Starting Meterkat a second time opens the existing window. GNOME shows tray icons only with the *AppIndicator and KStatusNotifierItem Support* extension; without it, start Meterkat again to bring the window back.
+
+**Start at sign-in** starts Meterkat hidden in the tray: a `Meterkat` entry under `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` on Windows, `~/.config/autostart/meterkat-desktop.desktop` on Linux. It is separate from the CLI autostart below. If the CLI companion already runs as a background service for the same state directory, the app only displays its data and does not upload a second time; **Settings → Let the app sync instead** removes the CLI autostart, stops its process and enables the app's own start at sign-in.
+
+**Updates:** the app checks the releases once a day and offers the download; it does not replace itself yet. The CLI keeps its signed self-update.
+
+Desktop sessions don't read your shell profile, so on Linux the app asks your login shell (`$SHELL -ilc`) for its `PATH` once at start to find `claude`, `codex` and `agy`. `AI_USAGE_CLAUDE_BIN`, `AI_USAGE_CODEX_BIN` and `AI_USAGE_ANTIGRAVITY_BIN` still override the lookup.
+
 ## Rename from "AI usage"
 
 Older installations keep working:

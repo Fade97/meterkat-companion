@@ -2,6 +2,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import { fromCodexLimits, type ProviderUsage } from "../shared/snapshot.js";
+import { childEnv } from "./runtime.js";
 
 export function codexCommand(): { command: string; args: string[] } {
   const configured = process.env.AI_USAGE_CODEX_BIN;
@@ -21,7 +22,7 @@ export function codexCommand(): { command: string; args: string[] } {
 export function readCodexUsage(timeoutMs = 20_000): Promise<ProviderUsage> {
   return new Promise((resolve, reject) => {
     const bin = codexCommand();
-    const child = spawn(bin.command, [...bin.args, "app-server", "--listen", "stdio://"], { stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
+    const child = spawn(bin.command, [...bin.args, "app-server", "--listen", "stdio://"], { env: childEnv(bin), stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     let settled = false; let buffer = "";
     const finish = (error?: Error, result?: ProviderUsage) => {
       if (settled) return; settled = true; clearTimeout(timer); child.stdin.end(); child.kill();
