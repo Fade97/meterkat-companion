@@ -1,0 +1,1 @@
+**Fix (Windows):** with Codex installed via npm, the desktop app opened a console window on every sync. The companion now starts Codex's native `codex.exe` directly and falls back to `codex.js` only when the native binary is missing.
