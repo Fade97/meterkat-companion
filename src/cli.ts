@@ -60,7 +60,7 @@ async function detectProviders(probe: boolean): Promise<ProviderCheck[]> {
     if (!reader) return { id, installed, ready: null, note: installed ? "found; quota collection is not supported yet" : "not found" };
     if (!installed) return { id, installed, ready: false, note: "not found on PATH (set AI_USAGE_" + id.toUpperCase() + "_BIN if installed elsewhere)" };
     if (!probe) return { id, installed, ready: null, note: "found; sign-in is checked during setup" };
-    try { const usage = await reader.read(); return { id, installed, ready: usage.state === "ok", note: usage.state === "ok" ? "signed in, quota readable" : "found, but no quota data; check sign-in" }; }
+    try { const usage = await reader.read(); return { id, installed, ready: usage.state === "ok", note: usage.state === "ok" ? "signed in, quota readable" : "found, but it reported no quota data; run setup again, and check sign-in if this persists" }; }
     catch (error) { return { id, installed, ready: false, note: error instanceof Error ? error.message : "quota unavailable" }; }
   }));
 }
