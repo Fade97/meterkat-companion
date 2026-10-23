@@ -1,0 +1,131 @@
+{
+  "description": "Meterkat relay protocol v2 test vectors. See protocol/v2.md and docs/adr/0001-relay-protocol-v2.md. Byte strings are lowercase hex unless the field name ends in B64u (base64url, no padding). Regenerate with `pnpm exec tsx scripts/protocol-v2-vectors.ts`.",
+  "hkdf": {
+    "ikmHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "saltUtf8": "ai-usage/v2",
+    "infoUtf8": "snapshot-aead|AAECAwQFBgcICQoLDA0ODw",
+    "length": 32,
+    "okmHex": "c5a6cfefa364b99eadf6f029c19d33e7f4a95cda72b022b9e495cc8034f7e2c4"
+  },
+  "encryption": {
+    "sourceKeyB64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+    "sourceId": "AAECAwQFBgcICQoLDA0ODw",
+    "epoch": 1,
+    "nonceHex": "a0a1a2a3a4a5a6a7a8a9aaab",
+    "associatedDataUtf8": "ai-usage/v2|AAECAwQFBgcICQoLDA0ODw|1|42|1790000000000",
+    "plaintextJson": "{\"schemaVersion\":1,\"sequence\":42,\"generatedAt\":1790000000000,\"providers\":[{\"id\":\"claude\",\"state\":\"ok\",\"sampledAt\":1789999990000,\"windows\":{\"fiveHour\":{\"usedPercent\":37.5,\"resetsAt\":1790010000000},\"weekly\":{\"usedPercent\":12,\"resetsAt\":1790500000000}}},{\"id\":\"codex\",\"state\":\"unavailable\",\"sampledAt\":null,\"windows\":{}}]}",
+    "paddedPlaintextLength": 512,
+    "paddedPlaintextHex": "7b22736368656d6156657273696f6e223a312c2273657175656e6365223a34322c2267656e6572617465644174223a313739303030303030303030302c2270726f766964657273223a5b7b226964223a22636c61756465222c227374617465223a226f6b222c2273616d706c65644174223a313738393939393939303030302c2277696e646f7773223a7b2266697665486f7572223a7b227573656450657263656e74223a33372e352c227265736574734174223a313739303031303030303030307d2c227765656b6c79223a7b227573656450657263656e74223a31322c227265736574734174223a313739303530303030303030307d7d7d2c7b226964223a22636f646578222c227374617465223a22756e617661696c61626c65222c2273616d706c65644174223a6e756c6c2c2277696e646f7773223a7b7d7d5d7d20202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020202020",
+    "envelope": {
+      "v": 2,
+      "epoch": 1,
+      "seq": 42,
+      "generatedAt": 1790000000000,
+      "nonce": "oKGio6Slpqeoqaqr",
+      "ciphertext": "jqC5Naql7AgcLpnEGs5TOgdnc_KAJ63NuvXldAifR4tqzp_HCPzHHhLB3cIyhY0nzMLDTlftvRZjl7Juq1Ahhg15nUaoHHFTs3-Igrqbpc4uxjzvPRFRFQTflVeiceHVXYF92V2gIY-AmZ59z61JKopUgzvOHI-vOdSWw1bVwIqyolaL5n0VZ4o0ntPcoZaY64qPolXfqkwobwpbfPazDgq7DlM92E8_jXFiJfX1mBKk9GfRASGVRCLDgnjGLhQKjTIUg0lZ-On7sbdkv4khgBNAR-b9ToJu1XVOttRVzQqo3CdmA4Az0q2DQAUGpbqVSKKSak7cE5HXUxJLh8D6kzkzxzLy2RdmZAdra2PVRodcUHCoa5fREiQhHqn1_BndyEMgPFDQ-y6TtauCpsfaLYpqTbciWRs6x8myKDXRW-IXVu5fSkNdqsKBlpXgwLLtSw_g0okIPc2rvatgGSUSJKBAMCGkR54CjiYQfWMvmYpco1Thbu5bZuPPFZlrf0ndibbU7MKEfrpv-0TyRB6jpR-_EIs-85PfNfjBTewC2iUi_c7z176pPipnIzToI5D_PhB7yDmjT1veeJjO79NdPaGBppsiea0-cQtP9__TfQDG8IauQ7FiztdxgOeZy5fr30KZpgEu-rpApTrNn98-0K9GCGkMc0y-RsvcePWcu_pSn1cL2bA6nzGNtY8gCLn7"
+    },
+    "ciphertextWithTagHex": "8ea0b935aaa5ec081c2e99c41ace533a076773f28027adcdbaf5e574089f478b6ace9fc708fcc71e12c1ddc232858d27ccc2c34e57edbd166397b26eab5021860d799d46a81c7153b37f8882ba9ba5ce2ec63cef3d11511504df9557a271e1d55d817dd95da0218f80999e7dcfad492a8a54833bce1c8faf39d496c356d5c08ab2a2568be67d15678a349ed3dca19698eb8a8fa255dfaa4c286f0a5b7cf6b30e0abb0e533dd84f3f8d716225f5f59812a4f467d10121954422c38278c62e140a8d3214834959f8e9fbb1b764bf892180134047e6fd4e826ed5754eb6d455cd0aa8dc2766038033d2ad83400506a5ba9548a2926a4edc1391d753124b87c0fa933933c732f2d9176664076b6b63d546875c5070a86b97d11224211ea9f5fc19ddc843203c50d0fb2e93b5ab82a6c7da2d8a6a4db722591b3ac7c9b22835d15be21756ee5f4a435daac2819695e0c0b2ed4b0fe0d289083dcdabbdab6019251224a0403021a4479e028e26107d632f998a5ca354e16eee5b66e3cf15996b7f49dd89b6d4ecc2847eba6ffb44f2441ea3a51fbf108b3ef393df35f8c14dec02da2522fdcef3d7bea93e2a672334e82390ff3e107bc839a34f5bde7898ceefd35d3da181a69b2279ad3e710b4ff7ffd37d00c6f086ae43b162ced77180e799cb97ebdf4299a6012efaba40a53acd9fdf3ed0af4608690c734cbe46cbdc78f59cbbfa529f570bd9b03a9f318db58f2008b9fb"
+  },
+  "mustReject": [
+    {
+      "reason": "seq changed by relay (AAD mismatch)",
+      "sourceKeyB64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "sourceId": "AAECAwQFBgcICQoLDA0ODw",
+      "epoch": 1,
+      "envelope": {
+        "v": 2,
+        "epoch": 1,
+        "seq": 43,
+        "generatedAt": 1790000000000,
+        "nonce": "oKGio6Slpqeoqaqr",
+        "ciphertext": "jqC5Naql7AgcLpnEGs5TOgdnc_KAJ63NuvXldAifR4tqzp_HCPzHHhLB3cIyhY0nzMLDTlftvRZjl7Juq1Ahhg15nUaoHHFTs3-Igrqbpc4uxjzvPRFRFQTflVeiceHVXYF92V2gIY-AmZ59z61JKopUgzvOHI-vOdSWw1bVwIqyolaL5n0VZ4o0ntPcoZaY64qPolXfqkwobwpbfPazDgq7DlM92E8_jXFiJfX1mBKk9GfRASGVRCLDgnjGLhQKjTIUg0lZ-On7sbdkv4khgBNAR-b9ToJu1XVOttRVzQqo3CdmA4Az0q2DQAUGpbqVSKKSak7cE5HXUxJLh8D6kzkzxzLy2RdmZAdra2PVRodcUHCoa5fREiQhHqn1_BndyEMgPFDQ-y6TtauCpsfaLYpqTbciWRs6x8myKDXRW-IXVu5fSkNdqsKBlpXgwLLtSw_g0okIPc2rvatgGSUSJKBAMCGkR54CjiYQfWMvmYpco1Thbu5bZuPPFZlrf0ndibbU7MKEfrpv-0TyRB6jpR-_EIs-85PfNfjBTewC2iUi_c7z176pPipnIzToI5D_PhB7yDmjT1veeJjO79NdPaGBppsiea0-cQtP9__TfQDG8IauQ7FiztdxgOeZy5fr30KZpgEu-rpApTrNn98-0K9GCGkMc0y-RsvcePWcu_pSn1cL2bA6nzGNtY8gCLn7"
+      }
+    },
+    {
+      "reason": "wrong sourceId (different derived key)",
+      "sourceKeyB64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "sourceId": "BBECAwQFBgcICQoLDA0ODw",
+      "epoch": 1,
+      "envelope": {
+        "v": 2,
+        "epoch": 1,
+        "seq": 42,
+        "generatedAt": 1790000000000,
+        "nonce": "oKGio6Slpqeoqaqr",
+        "ciphertext": "jqC5Naql7AgcLpnEGs5TOgdnc_KAJ63NuvXldAifR4tqzp_HCPzHHhLB3cIyhY0nzMLDTlftvRZjl7Juq1Ahhg15nUaoHHFTs3-Igrqbpc4uxjzvPRFRFQTflVeiceHVXYF92V2gIY-AmZ59z61JKopUgzvOHI-vOdSWw1bVwIqyolaL5n0VZ4o0ntPcoZaY64qPolXfqkwobwpbfPazDgq7DlM92E8_jXFiJfX1mBKk9GfRASGVRCLDgnjGLhQKjTIUg0lZ-On7sbdkv4khgBNAR-b9ToJu1XVOttRVzQqo3CdmA4Az0q2DQAUGpbqVSKKSak7cE5HXUxJLh8D6kzkzxzLy2RdmZAdra2PVRodcUHCoa5fREiQhHqn1_BndyEMgPFDQ-y6TtauCpsfaLYpqTbciWRs6x8myKDXRW-IXVu5fSkNdqsKBlpXgwLLtSw_g0okIPc2rvatgGSUSJKBAMCGkR54CjiYQfWMvmYpco1Thbu5bZuPPFZlrf0ndibbU7MKEfrpv-0TyRB6jpR-_EIs-85PfNfjBTewC2iUi_c7z176pPipnIzToI5D_PhB7yDmjT1veeJjO79NdPaGBppsiea0-cQtP9__TfQDG8IauQ7FiztdxgOeZy5fr30KZpgEu-rpApTrNn98-0K9GCGkMc0y-RsvcePWcu_pSn1cL2bA6nzGNtY8gCLn7"
+      }
+    },
+    {
+      "reason": "envelope epoch 2 > paired epoch 1: key rotated, re-pair required",
+      "sourceKeyB64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "sourceId": "AAECAwQFBgcICQoLDA0ODw",
+      "epoch": 1,
+      "envelope": {
+        "v": 2,
+        "epoch": 2,
+        "seq": 43,
+        "generatedAt": 1790000000000,
+        "nonce": "sLGys7S1tre4ubq7",
+        "ciphertext": "splzIQ8BJJ8P1aYxupb47-2u5lDa-tUquuaiHVpadd_X0MHeJxl95VnnEmi-9CMa4Psn-ZUQXFAbfYK0_NfKXH6giyeoWdi0pcwD9NuSn9-CkT70T3_Roh7tcOZ8AHkHUtjj85bV3fn3t1_dQaMdYFuIjugZ1iCxB2g0VqopcT4ec5lCuDcrferyNGBHjS794NMFVTIEyRzi7LydCpcdqvJ0UF1432Wn5hMqvTQjVXVDSctjf-SaKzlNyzrUfA54nBR59sxgPRYldYvWNNvl1Vi4E89wHAWxkoAMifOlbvmBClksBGQROFoSW0EBwxweVjFIS3l_uMG_oMFyjW6guwPFNox2P40eB1O_KoLP9IXJHw2UpaLcFWIATjaXwJTEbnddpB3avUuZ9BFW-d0nvR84ypmbUB3swPaK69bDK71M3GD2LZ_lonxN5cWtvUA2T1ooRcGL32TK7xLM3Zo80F6i9vBA_UxuEGwCJzHaRjBZGsp-ExJqFxu6m4G27D12cmD8W9A-eNndkjTaKZ8OQ2vhc0W_pHHS6g70xIdJKjBIhBiMZOEFt-yhS33d7zPMPGjstTOL0OfH9diWzPwGOMO3KiT3rARloypztRlWJk3EYV7HMW7_h4KuDufiGQecnUkF_66ifAVE7skZWXdfI0aTLgyG4LMUKx7IjQjFu797eGJqyW4rFFPcH8MOOEqF"
+      }
+    }
+  ],
+  "pairingLink": {
+    "link": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1",
+    "parsed": {
+      "relay": "https://meterkat-relay.fabian-duerkop.de",
+      "sourceId": "AAECAwQFBgcICQoLDA0ODw",
+      "code": "AbCdEfGhIjKl",
+      "sourceKeyB64u": "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8",
+      "epoch": 1
+    },
+    "loopbackLink": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=http%3A%2F%2F127.0.0.1%3A4381&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1",
+    "mustReject": [
+      {
+        "reason": "plain http relay that is not loopback",
+        "link": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=http%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1"
+      },
+      {
+        "reason": "relay with a path",
+        "link": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de%2Fx&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1"
+      },
+      {
+        "reason": "custom scheme instead of the verified App Link",
+        "link": "aiusage://pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1"
+      },
+      {
+        "reason": "other host",
+        "link": "https://evil.example/pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1"
+      },
+      {
+        "reason": "key shorter than 32 bytes",
+        "link": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAw&e=1"
+      },
+      {
+        "reason": "missing v=2",
+        "link": "https://meterkat.fabian-duerkop.de/pair?relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=1"
+      },
+      {
+        "reason": "epoch 0",
+        "link": "https://meterkat.fabian-duerkop.de/pair?v=2&relay=https%3A%2F%2Fmeterkat-relay.fabian-duerkop.de&source=AAECAwQFBgcICQoLDA0ODw&code=AbCdEfGhIjKl#k=AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8&e=0"
+      }
+    ]
+  },
+  "sourceIdMac": {
+    "note": "Relay-internal; clients treat source IDs as opaque. id = random(8) || HMAC-SHA256(secret, 'meterkat/source-id|' || random)[0..8]",
+    "secretUtf8": "example-server-secret-not-used-anywhere",
+    "randomHex": "3031323334353637",
+    "sourceId": "MDEyMzQ1Njf_UxhJXoj7hA"
+  },
+  "proofOfWork": {
+    "challenge": "eyJzaWQiOiJBQUVDQXdRRkJnY0lDUW9MREEwT0R3IiwiZXhwIjoxNzkwMDAwNjAwMDAwLCJiaXRzIjoxMn0.signature-not-checked-by-clients",
+    "bits": 12,
+    "solution": "7833",
+    "digestHex": "000172f9dd8c0c514faace2f099670c7ad336f57c2ff0607e37f7ac4e3d80f73",
+    "note": "Smallest decimal solution; SHA-256 over UTF-8 of challenge + '.' + solution. Clients never verify the signature part."
+  },
+  "tokenHash": {
+    "token": "AAECAwQFBgcICQoLDA0ODw.EBESExQVFhcYGRobHB0eHyAhIiMkJSYnKCkqKywtLi8",
+    "storedHashOfSecretHex": "6c8784109d2bcbb821eea202dc94a696e4f063da23ab85e1e667b2fd9a24e5b8"
+  }
+}

@@ -1,0 +1,11 @@
+node_modules/
+dist/
+output/
+.runtime/
+*.log
+
+# Secrets that must never be committed
+.env
+.env.*
+*.pem
+*.p12

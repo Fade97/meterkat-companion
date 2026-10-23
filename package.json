@@ -1,0 +1,34 @@
+{
+  "name": "meterkat-companion",
+  "version": "1.0.1",
+  "description": "Desktop companion for Meterkat: reads Claude Code, Codex and Antigravity quota reports and sends end-to-end encrypted snapshots to your phone.",
+  "license": "MIT",
+  "private": true,
+  "type": "module",
+  "repository": "github:Fade97/meterkat-companion",
+  "homepage": "https://meterkat.fabian-duerkop.de",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "tsx --test tests/snapshot.test.ts tests/protocol-v2.test.ts tests/antigravity.test.ts tests/autostart.test.ts tests/update.test.ts tests/setup.test.ts tests/confirm.test.ts && tsx scripts/protocol-v2-vectors.ts --check",
+    "meterkat": "tsx src/cli.ts",
+    "bundle": "esbuild src/cli.ts --bundle --platform=node --format=cjs --target=node22 --outfile=output/ai-usage.cjs",
+    "package": "tsx scripts/package.ts",
+    "vectors": "tsx scripts/protocol-v2-vectors.ts",
+    "publish:release": "tsx scripts/publish-release.ts"
+  },
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "packageManager": "pnpm@11.1.0",
+  "devDependencies": {
+    "@types/node": "^22.20.5",
+    "@types/qrcode": "1.5.6",
+    "esbuild": "0.25.12",
+    "postject": "1.0.0-alpha.6",
+    "tsx": "4.20.6",
+    "typescript": "5.9.3"
+  },
+  "dependencies": {
+    "qrcode": "1.5.4"
+  }
+}
