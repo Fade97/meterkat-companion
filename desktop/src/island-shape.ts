@@ -63,6 +63,22 @@ export function hits(bounds: { x: number; y: number }, area: HitArea | null, poi
   return x >= area.x && x <= area.x + area.width && y >= area.y && y <= area.y + area.height;
 }
 
+/**
+ * The window lets the pointer through until the pointer poll notices it is on the island, so a quick press on arrival
+ * goes to the window below and the page never sees it. Fed with the primary button on every poll, this reports such a
+ * press as a click once it is released on the island. `taking` says whether the window took the pointer before this poll.
+ */
+export function missedClicks() {
+  let down = false, missed = false;
+  return (pressed: boolean, inside: boolean, taking: boolean) => {
+    let click = false;
+    if (pressed && !down) missed = inside && !taking;
+    else if (!pressed && down) { click = missed && inside; missed = false; }
+    down = pressed;
+    return click;
+  };
+}
+
 /** Screen points (DIP) left and right of the widest shape, just below the top edge of `display`. */
 export function samplePoints(display: { bounds: { x: number; y: number; width: number } }): { x: number; y: number }[] {
   const centre = display.bounds.x + display.bounds.width / 2;

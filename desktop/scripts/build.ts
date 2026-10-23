@@ -1,4 +1,4 @@
-// Bundles the main process, preload, registration worker and window into desktop/dist; electron-builder packs that.
+// Bundles the main process, preloads, the registration and foreground workers and the windows into desktop/dist; electron-builder packs that.
 //   pnpm build                       (version from package.json)
 //   METERKAT_VERSION=1.2.3 pnpm build
 import { cpSync, mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
@@ -16,7 +16,7 @@ const seaShim: Plugin = { name: "sea-shim", setup: b => b.onResolve({ filter: /^
 
 rmSync(dist, { recursive: true, force: true });
 const { metafile } = await build({
-  entryPoints: { main: "src/main.ts", preload: "src/preload.ts", "island-preload": "src/island-preload.ts", "register-worker": "src/register-worker.ts" },
+  entryPoints: { main: "src/main.ts", preload: "src/preload.ts", "island-preload": "src/island-preload.ts", "register-worker": "src/register-worker.ts", "foreground-worker": "src/foreground-worker.ts" },
   absWorkingDir: root, bundle: true, platform: "node", format: "cjs", target: "node22", outdir: dist, outExtension: { ".js": ".cjs" },
   // koffi (Win32 calls for the island) is a native module: copied below and loaded at runtime.
   external: ["electron", "koffi"], plugins: [seaShim], metafile: true, logLevel: "warning",
