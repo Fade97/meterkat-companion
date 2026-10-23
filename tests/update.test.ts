@@ -3,13 +3,15 @@ import assert from "node:assert/strict";
 import { createHash, generateKeyPairSync, sign } from "node:crypto";
 import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join, relative } from "node:path";
+import { createRequire } from "node:module";
+import { fileURLToPath } from "node:url";
 import { allowedDownloadUrl, checksumFor, compareVersions, download, latestRelease, recoverInterruptedSwap, releaseAssetName, rollback, sidePaths, swapExecutable, update, updateSettings, type Fetch, type Runner } from "../src/update.js";
-import { symlinkSync } from "node:fs";
+import { realpathSync, symlinkSync } from "node:fs";
 import { stripPeSignature, thirdPartyNotices } from "../scripts/package.js";
 import { RELEASE_PUBLIC_KEYS, verifySignature } from "../src/release-key.js";
 
-// A throwaway signing key stands in for the release key kept in Vault.
+// A throwaway signing key stands in for the real release key, which never enters the repository.
 const signing = generateKeyPairSync("ed25519");
 const testKey = signing.publicKey.export({ type: "spki", format: "der" }).toString("base64");
 const signSums = (sums: string, key = signing.privateKey) => sign(null, Buffer.from(sums), key).toString("base64") + "\n";
@@ -206,7 +208,13 @@ test("a version that failed its start check is skipped by automatic checks but n
 });
 
 test("packaging collects licence notices for the embedded runtime and every bundled package", () => {
-  const notices = thirdPartyNotices(["companion/cli.ts", "node_modules/.pnpm/qrcode@1.5.4/node_modules/qrcode/lib/index.js", "node_modules/.pnpm/pngjs@5.0.0/node_modules/pngjs/lib/png.js"]);
+  // Inputs as esbuild reports them: real paths relative to the repository root, wherever pnpm put the store
+  // (this checkout's node_modules, or a parent workspace's).
+  const root = fileURLToPath(new URL("..", import.meta.url));
+  const packageDir = (name: string, from: string) => realpathSync(dirname(createRequire(from).resolve(`${name}/package.json`)));
+  const qrcode = packageDir("qrcode", import.meta.url); const pngjs = packageDir("pngjs", join(qrcode, "package.json"));
+  const input = (dir: string, file: string) => relative(root, join(dir, file)).replaceAll("\\", "/");
+  const notices = thirdPartyNotices(["src/cli.ts", input(qrcode, "lib/index.js"), input(pngjs, "lib/png.js")]);
   assert.match(notices, /^Node\.js \d+\.\d+\.\d+ \(embedded runtime\)$/m);
   assert.match(notices, /^qrcode 1\.5\.4 \(MIT\)$/m);
   assert.match(notices, /^pngjs 5\.0\.0 \(MIT\)$/m);
