@@ -12,7 +12,7 @@ import { probeAntigravityUsage } from "./antigravity.js";
 import { readState, writeState, removeState, stateDirectory, relayUrl, type Config } from "./state.js";
 import { isV2, pairingLinkV2, rotateKey, uploadV2, writerCall } from "./relay-v2.js";
 import { COMPANION_VERSION } from "./version.js";
-import { automaticUpdates, CHECK_INTERVAL_MS, checkForUpdate, realRunner, recoverInterruptedSwap, rollback, setAutomatic, skipVersion, update, updateSettings } from "./update.js";
+import { automaticUpdates, CHECK_INTERVAL_MS, checkForUpdate, realRunner, recoverInterruptedSwap, rollback, setAutomatic, setChannel, skipVersion, update, updateChannel, updateSettings, type UpdateChannel } from "./update.js";
 import { defaultRelay, registerWithRelay } from "./registration.js";
 import { askYesNo, defaultInstallTarget, installExecutable, openFile, setup } from "./setup.js";
 import { detectProviders } from "./providers.js";
@@ -73,7 +73,7 @@ function spawnSyncSafe(file: string, args: string[]) {
 }
 function flag(args: string[], name: string) { const i = args.indexOf(name); if (i < 0) return undefined; const value = args[i + 1]; if (!value || value.startsWith("--")) throw new Error(`${name} needs a value`); return value; }
 const RELAY_TERMS = "The hosted relay (meterkat-relay.fabian-duerkop.de) is a separate free service under its terms of use: https://meterkat.fabian-duerkop.de/terms";
-const USAGE = "Commands: licenses, setup [--relay <origin>] [--dry-run] [--autostart|--no-autostart] [--no-open] [--force], version, update [check|status|enable|disable|rollback] [--prerelease], register <relay> [--v1], capture-claude, inspect, probe-antigravity, pair [phone-relay-origin], once, run, background, revoke [device-id], devices, rotate-key [--yes], delete [--yes], autostart install|remove|status";
+const USAGE = "Commands: licenses, setup [--relay <origin>] [--dry-run] [--autostart|--no-autostart] [--no-open] [--force], version, update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease], register <relay> [--v1], capture-claude, inspect, probe-antigravity, pair [phone-relay-origin], once, run, background, revoke [device-id], devices, rotate-key [--yes], delete [--yes], autostart install|remove|status";
 async function main() {
   const [command, argument] = process.argv.slice(2);
   if (!command || ["--help", "-h", "help"].includes(command) || process.argv.slice(3).some(a => a === "--help" || a === "-h")) { console.log(USAGE); return; }
@@ -87,14 +87,20 @@ async function main() {
   }
   if (command === "update") {
     const options = process.argv.slice(3); const prerelease = options.includes("--prerelease") || undefined;
-    const action = options.find(o => !o.startsWith("--"));
-    if (options.some(o => o.startsWith("--") && o !== "--prerelease")) throw new Error("Usage: update [check|status|enable|disable|rollback] [--prerelease]");
+    const [action, value, ...extra] = options.filter(o => !o.startsWith("--"));
+    if (options.some(o => o.startsWith("--") && o !== "--prerelease")) throw new Error("Usage: update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease]");
+    if (action === "channel") {
+      if (extra.length) throw new Error("Usage: update channel [stable|beta]");
+      if (value) setChannel(value as UpdateChannel);
+      console.log(`Update channel: ${updateChannel()}.${value && updateChannel() !== value ? " AI_USAGE_UPDATE_PRERELEASE=1 keeps it on beta." : ""}`); return;
+    }
+    if (value) throw new Error("Usage: update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease]");
     if (action === "enable" || action === "disable") { setAutomatic(action === "enable"); console.log(`Automatic updates ${action}d.`); return; }
-    if (action === "status") { const s = updateSettings(); console.log(JSON.stringify({ version: COMPANION_VERSION, packaged: isSea(), automatic: automaticUpdates(), lastCheck: s.lastCheck ? new Date(s.lastCheck).toISOString() : null, skipped: s.skipped ?? null }, null, 2)); return; }
+    if (action === "status") { const s = updateSettings(); console.log(JSON.stringify({ version: COMPANION_VERSION, packaged: isSea(), automatic: automaticUpdates(), channel: updateChannel(), lastCheck: s.lastCheck ? new Date(s.lastCheck).toISOString() : null, skipped: s.skipped ?? null }, null, 2)); return; }
     if (action === "check") { const { release, newer } = await checkForUpdate(undefined, undefined, prerelease); console.log(newer ? `Companion ${release!.version} is available (installed ${COMPANION_VERSION}).` : `Companion ${COMPANION_VERSION} is up to date.`); return; }
     if (!isSea()) throw new Error("Self-update is available for the packaged companion only; rebuild the bundle instead");
     if (action === "rollback") { console.log(rollback(process.execPath)); skipVersion(COMPANION_VERSION); return; }
-    if (action) throw new Error("Usage: update [check|status|enable|disable|rollback] [--prerelease]");
+    if (action) throw new Error("Usage: update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease]");
     const result = await update(process.execPath, { prerelease }); console.log(result.message);
     if (result.status === "updated") console.log("Restart the companion (or sign out and in) to use the new version.");
     if (result.status === "rolled-back") process.exitCode = 1;

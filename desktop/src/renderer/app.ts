@@ -1,7 +1,7 @@
 // The window: setup wizard until the companion is registered, then Overview, Phones and Settings.
 // All data comes through window.meterkat (preload.ts); the page has no Node or network access of its own.
 import { ago, bars, percent, providerColor, providerGroups, providerMark, providerName, resetText, shownPercent } from "../format.js";
-import type { AppState, BarMode, Device, IslandAnchor, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
+import type { AppState, BarMode, Device, IslandAnchor, MeterkatApi, Pairing, ProviderCheck, UpdateChannel, View } from "../ipc.js";
 
 declare global { interface Window { meterkat: MeterkatApi } }
 const api = window.meterkat;
@@ -124,6 +124,8 @@ function settingsView() {
     : update.newer && update.install === "auto" ? `<button class="btn primary" data-action="install-update">Update now</button>`
     : update.newer ? `<button class="btn primary" data-action="download">Download</button>`
     : `<button class="btn" data-action="check-update">Check now</button>`;
+  const channel = (value: UpdateChannel, label: string) => `<option value="${value}" ${update.channel === value ? "selected" : ""}>${label}</option>`;
+  const channels = `<div class="card row"><div><div>Update channel</div><div class="muted small">Beta gets new features first and may have rough edges. Back on Stable, Meterkat keeps this version until a newer release.</div></div><select class="select" data-action="update-channel" aria-label="Update channel">${channel("stable", "Stable")}${channel("beta", "Beta")}</select></div>`;
   const automatic = update.install === "auto" ? `<div class="card row"><div><div>Install updates automatically</div><div class="muted small">Signed releases only. Meterkat restarts by itself while it is in the tray.</div></div>${toggle("automatic-updates", update.automatic, "Install updates automatically")}</div>` : "";
   const island = state.island.unsupported
     ? `<div class="card"><div>Island</div><div class="muted small">${esc(state.island.unsupported)}</div></div>`
@@ -136,7 +138,7 @@ function settingsView() {
     <h2>Updates</h2>
     <div class="card"><div class="row"><div><div>Version ${esc(state.version)}</div><div class="muted small">${latest}</div></div>
       ${updateButton}</div></div>
-    ${automatic}
+    ${channels}${automatic}
     <h2>Relay</h2>
     <div class="card"><div class="small selectable">${esc(registration?.relay ?? "Not registered")}</div><div class="muted small">End-to-end encrypted: the relay only ever sees ciphertext. The key stays on this computer and your paired phones.</div></div>
     ${settingsError ? `<p class="error small">${esc(settingsError)}</p>` : ""}
@@ -248,6 +250,7 @@ document.addEventListener("change", event => {
   const target = event.target as HTMLInputElement;
   if (target.dataset.action === "relay-choice") { customRelay = target.value === "custom"; setupError = null; render(); document.querySelector<HTMLInputElement>("#relay-url")?.focus(); }
   if (target.dataset.action === "setup-autostart") setupAutostart = target.checked;
+  if (target.dataset.action === "update-channel") void api.setUpdateChannel(target.value === "beta" ? "beta" : "stable").catch(error => { settingsError = message(error); render(); });
   if (target.dataset.action === "automatic-updates") void api.setAutomaticUpdates(target.checked).catch(error => { settingsError = message(error); render(); });
   if (target.dataset.action === "autostart") void api.setAutostart(target.checked).catch(error => { settingsError = message(error); render(); });
   if (target.dataset.action === "island") void api.setIsland(target.checked).catch(error => { settingsError = message(error); render(); });
