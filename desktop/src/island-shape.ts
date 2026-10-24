@@ -79,6 +79,19 @@ export function missedClicks() {
   };
 }
 
+/**
+ * One release can reach both the page and the button poll (pressed while the window still let the pointer through,
+ * released after it took it). Counts the first of them and ignores whatever follows within `ms`.
+ */
+export function oneClick(ms: number) {
+  let last = -Infinity;
+  return (now: number) => {
+    if (now - last < ms) return false;
+    last = now;
+    return true;
+  };
+}
+
 /** Where the island hangs: the top edge of the display, or the top edge of the AI window in front. */
 export type IslandAnchor = "screen" | "window";
 type Box = { x: number; y: number; width: number; height: number };
