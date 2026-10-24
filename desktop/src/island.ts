@@ -11,6 +11,7 @@ import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryB
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
 import type { BarMode } from "./format.js";
 import { hits, islandEdge, missedClicks, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
+import { windowEventStream, type WindowEvent } from "./window-events.js";
 import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
 /** Tall enough for the open panel; everything outside the drop lets the pointer through. */
@@ -20,7 +21,7 @@ const POINTER_MS = 25;
 /** The panel closes once the pointer has been off it this long. */
 const LEAVE_MS = 900;
 const POLL_MS = 1000;
-/** Poll interval while the AI window the island is pinned to is moving, so the drop keeps up with it. */
+/** Poll interval while the pinned AI window moves and window events are not available, so the drop keeps up. */
 const FOLLOW_MS = 150;
 const TONE_MS = 1500;
 const EVENTS_MS = 5000;
@@ -40,6 +41,8 @@ export type IslandOptions = {
   page: string;
   /** foreground-worker.cjs: the Win32 probe runs there so it cannot stall the pointer tracking. */
   probeWorker: string;
+  /** window-events-worker.cjs: while pinned, moves of the window in front come from there. */
+  eventsWorker: string;
   /** Pretends an AI tool is in front and cycles sample announcements (METERKAT_ISLAND_DEMO=1). */
   demo: boolean;
 };
@@ -49,7 +52,11 @@ export function createIsland(options: IslandOptions) {
   const tracker = new IslandTracker();
   let probe: ForegroundProbe | null = null;
   let win: BrowserWindow | null = null;
-  let display: Display | null = null, edge: IslandEdge | null = null, moving = false;
+  let display: Display | null = null, edge: IslandEdge | null = null, moving = false, again = false;
+  /** Pushes moves of the window in front while pinned; null when off or failed (then the poll follows the window). */
+  let events: ReturnType<typeof windowEventStream> | null = null, eventsFailed = false;
+  /** The process of the AI window the last poll saw in front; moves of other windows are ignored. */
+  let aiPid: number | null = null;
   let visible = false, hidden = true, misses = 0, failures = 0;
   let tone: IslandTone = "ink";
   let queue: IslandEvent[] = [];
@@ -64,12 +71,7 @@ export function createIsland(options: IslandOptions) {
       const local = () => windowsProbe(require("koffi") as KoffiModule, rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point));
       return threadedProbe(() => new Worker(options.probeWorker), point => screen.screenToDipPoint(point), rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point), local);
     }
-    // X11 reports physical pixels; Electron converts points but not rectangles there.
-    const toDip = (rect: Rect) => {
-      const from = screen.screenToDipPoint({ x: rect.x, y: rect.y }), to = screen.screenToDipPoint({ x: rect.x + rect.width, y: rect.y + rect.height });
-      return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
-    };
-    return linuxProbe(capture, cursor, () => options.anchor() === "window", toDip);
+    return linuxProbe(capture, cursor, () => options.anchor() === "window", dipRect);
   }
 
   /** The pointer in DIP and whether the primary button is held. Windows reports the point live; X11 is asked directly (see x11Pointer). */
@@ -129,6 +131,34 @@ export function createIsland(options: IslandOptions) {
     win.setBounds(bounds);
     // Moving to a display with another scale factor applies the old factor first (Windows).
     if (process.platform === "win32") win.setBounds(bounds);
+  }
+
+  /** Puts the island on `frame`'s top edge (pinned) or on the display nearest `near`; true when it had to move. */
+  function position(frame: Rect | null, near: Point | null) {
+    const anchor = options.anchor(), pinned = anchor === "window" ? frame : null;
+    const point = pinned ? { x: pinned.x + pinned.width / 2, y: pinned.y } : near;
+    const target = point ? screen.getDisplayNearestPoint(point) : screen.getPrimaryDisplay();
+    const next = islandEdge(anchor, target.bounds, pinned, ISLAND_WINDOW.width / 2);
+    const moved = !edge || next.cx !== edge.cx || next.y !== edge.y;
+    if (!display || target.id !== display.id || hidden || moved) { display = target; edge = next; ensureWindow(); place(next); }
+    return moved && !!pinned;
+  }
+
+  /** Window events run only while pinned and shown; they replace the fast poll that otherwise follows the window. */
+  function syncEvents() {
+    const want = !reason && !options.demo && !eventsFailed && options.enabled() && options.anchor() === "window";
+    if (want && !events) events = windowEventStream(() => new Worker(options.eventsWorker), onWindowEvent, failure => {
+      events = null; eventsFailed = true;
+      console.warn(`Meterkat island: window events unavailable, following the window by polling (${failure})`);
+    });
+    if (!want && events) { events.close(); events = null; }
+  }
+  function onWindowEvent(event: WindowEvent) {
+    if (stopped) return;
+    // Another window in front: classify it now instead of within a second.
+    if (event.type === "foreground") { if (polling) again = true; else schedule(0); return; }
+    if (event.pid !== aiPid || hidden || expanded || options.anchor() !== "window") return;
+    position(dipRect(event.bounds), null);
   }
 
   function send() {
@@ -203,6 +233,7 @@ export function createIsland(options: IslandOptions) {
 
   async function poll() {
     const now = Date.now();
+    syncEvents();
     if (reason || !options.enabled()) { hideWindow(); return; }
     let reading: ForegroundReading | null = null;
     try { reading = await read(); failures = 0; } catch (error) {
@@ -213,16 +244,12 @@ export function createIsland(options: IslandOptions) {
     misses = ai ? 0 : misses + 1;
     const nextVisible = ai || (visible && misses < HIDE_AFTER);
 
+    aiPid = ai && reading ? reading.pid : null;
     moving = false;
     if (ai && reading && !expanded) {
-      const anchor = options.anchor(), frame = anchor === "window" ? reading.bounds : null;
-      const near = frame ? { x: frame.x + frame.width / 2, y: frame.y } : reading.anchor;
-      const target = near ? screen.getDisplayNearestPoint(near) : screen.getPrimaryDisplay();
-      const next = islandEdge(anchor, target.bounds, frame, ISLAND_WINDOW.width / 2);
-      const moved = !edge || next.cx !== edge.cx || next.y !== edge.y;
-      // A pinned island that had to move is probably following a drag; look again soon.
-      moving = moved && !!frame && !!edge && !hidden;
-      if (!display || target.id !== display.id || hidden || moved) { display = target; edge = next; ensureWindow(); place(next); }
+      const shown = !!edge && !hidden;
+      // A pinned island that had to move is probably following a drag; without window events, look again soon.
+      moving = position(reading.bounds, reading.anchor) && shown && !events;
     }
     if (nextVisible && hidden && win) { win.showInactive(); hidden = false; }
     if (!hidden && win && process.platform === "win32") win.setAlwaysOnTop(true, "screen-saver"); // others may have risen above
@@ -265,7 +292,11 @@ export function createIsland(options: IslandOptions) {
   }
   function loop() {
     timer = null; polling = true;
-    void poll().finally(() => { polling = false; if (!stopped) schedule(moving ? FOLLOW_MS : POLL_MS); });
+    void poll().finally(() => {
+      polling = false;
+      if (!stopped) schedule(again ? 0 : moving ? FOLLOW_MS : POLL_MS);
+      again = false;
+    });
   }
 
   return {
@@ -285,6 +316,14 @@ export function createIsland(options: IslandOptions) {
       ipcMain.off(ISLAND_HIT_CHANNEL, onHitArea); ipcMain.off(ISLAND_TOGGLE_CHANNEL, onToggle);
       if (win && !win.isDestroyed()) win.destroy(); win = null;
       probe?.close?.(); probe = null;
+      events?.close(); events = null;
     },
   };
+}
+
+/** Screen pixels → DIP. Electron converts rectangles only on Windows; on X11 the corners are converted instead. */
+function dipRect(rect: Rect): Rect {
+  if (process.platform === "win32") return screen.screenToDipRect(null, rect);
+  const from = screen.screenToDipPoint({ x: rect.x, y: rect.y }), to = screen.screenToDipPoint({ x: rect.x + rect.width, y: rect.y + rect.height });
+  return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
 }
