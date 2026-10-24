@@ -10,7 +10,7 @@ import { isAiWindow } from "./ai-apps.js";
 import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryButton, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type Rect, type ScreenCapture } from "./foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
 import type { BarMode } from "./format.js";
-import { hits, islandEdge, missedClicks, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
+import { hits, islandEdge, missedClicks, oneClick, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
 import { windowEventStream, type WindowEvent } from "./window-events.js";
 import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
@@ -20,6 +20,8 @@ export const ISLAND_WINDOW = { width: 440, height: PANEL_MAX_HEIGHT + 24 };
 const POINTER_MS = 25;
 /** The panel closes once the pointer has been off it this long. */
 const LEAVE_MS = 900;
+/** A release reported by the page and by the button poll within this time is one click. */
+const CLICK_MS = 300;
 const POLL_MS = 1000;
 /** Poll interval while the pinned AI window moves and window events are not available, so the drop keeps up. */
 const FOLLOW_MS = 150;
@@ -66,7 +68,7 @@ export function createIsland(options: IslandOptions) {
   let busyUntil = 0, quietUntil = 0, toneAt = 0, eventsAt = 0, nextId = 1, demoStep = 0, invisibleSince = 0;
   let timer: NodeJS.Timeout | null = null, polling = false, stopped = true;
   let pointer: NodeJS.Timeout | null = null, area: HitArea | null = null, hover = false, expanded = false, insideAt = 0;
-  const missed = missedClicks();
+  const missed = missedClicks(), single = oneClick(CLICK_MS);
 
   function createProbe(): ForegroundProbe {
     if (process.platform === "win32") {
@@ -209,7 +211,7 @@ export function createIsland(options: IslandOptions) {
     if (inside !== hover) { hover = inside; win.setIgnoreMouseEvents(!inside); send(); }
     if (inside) insideAt = now;
     else if (expanded && now - insideAt > LEAVE_MS) setExpanded(false);
-    if (click) setExpanded(!expanded);
+    if (click && single(now)) setExpanded(!expanded);
   }
 
   const fromPage = (event: IpcMainEvent) => !!win && !win.isDestroyed() && event.sender === win.webContents;
@@ -219,7 +221,11 @@ export function createIsland(options: IslandOptions) {
     area = value && [value.x, value.y, value.width, value.height].every(Number.isFinite) ? { x: value.x, y: value.y, width: value.width, height: value.height } : null;
   };
   // Only a click while the pointer is on the island counts; the window lets every other click through anyway.
-  const onToggle = (event: IpcMainEvent) => { if (fromPage(event) && hover) { insideAt = Date.now(); setExpanded(!expanded); } };
+  const onToggle = (event: IpcMainEvent) => {
+    if (!fromPage(event) || !hover) return;
+    insideAt = Date.now();
+    if (single(insideAt)) setExpanded(!expanded);
+  };
 
   async function read(): Promise<ForegroundReading | null> {
     if (options.demo) return { window: { app: "claude", title: "Claude", descendants: [], fullscreen: false }, anchor: cursor(), bounds: null, pid: 0 };

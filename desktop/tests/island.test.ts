@@ -7,7 +7,7 @@ import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
 import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseExtents, parseWindowInfo, parseWindowProps, threadedProbe, visibleFrame, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
-import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, samplePoints } from "../src/island-shape.js";
+import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, oneClick, samplePoints } from "../src/island-shape.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60_000;
@@ -56,7 +56,7 @@ test("a press that reaches the drop before the window takes the pointer still co
   assert.equal(missed(true, true, false), false);
   assert.equal(missed(true, true, true), false);
   assert.equal(missed(false, true, true), true);
-  // Pressed while the window already took the pointer: the page sees that click itself.
+  // Pressed while the window already took the pointer: the page sees that release itself.
   assert.equal(missed(true, true, true), false);
   assert.equal(missed(false, true, true), false);
   // Released off the island, or pressed elsewhere and dragged onto it: no click.
@@ -64,6 +64,17 @@ test("a press that reaches the drop before the window takes the pointer still co
   assert.equal(missed(false, false, true), false);
   assert.equal(missed(true, false, false), false);
   assert.equal(missed(false, true, true), false);
+});
+
+test("a release reported by both the page and the button poll is one click", () => {
+  const single = oneClick(300);
+  assert.equal(single(1000), true);
+  // The same release from the other source, one or two pointer polls later.
+  assert.equal(single(1025), false);
+  assert.equal(single(1299), false);
+  // The next click.
+  assert.equal(single(1300), true);
+  assert.equal(single(2000), true);
 });
 
 test("usage is announced after a jump of 10 points or when it crosses 50, 75 or 90 %", () => {

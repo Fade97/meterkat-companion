@@ -225,8 +225,9 @@ function update(next: IslandUpdate) {
 // "in 2 h 10 min" and "5 min ago" in the open panel stay current.
 setInterval(() => { if (expanded) springTo(renderPanel(Date.now()), 260, 24); }, 30_000);
 
-// The window only takes clicks while the pointer is on the island, so every click here is meant for it.
-document.addEventListener("click", () => api.toggle());
+// The window only takes the pointer while it is on the island, so every release here is meant for it. Not "click":
+// the window cannot take focus, and while another app is in front Windows drops the press and delivers only the release.
+document.addEventListener("pointerup", event => { if (event.button === 0) api.toggle(); });
 
 draw();
 api.onUpdate(update);
