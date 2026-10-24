@@ -4,8 +4,11 @@
 import type { KoffiModule, Rect } from "./foreground.js";
 import { visibleFrame } from "./foreground.js";
 
-/** A new window came to the front (pid 0: unknown), or the one in front moved or changed size. Screen pixels. */
-export type WindowEvent = { type: "foreground"; pid: number } | { type: "bounds"; pid: number; bounds: Rect };
+/**
+ * A new window came to the front (pid 0: unknown), the one in front moved or changed size (screen pixels), or the
+ * user started or ended dragging or resizing it (Windows only).
+ */
+export type WindowEvent = { type: "foreground"; pid: number } | { type: "bounds"; pid: number; bounds: Rect } | { type: "drag"; pid: number; active: boolean };
 type Post = (event: WindowEvent) => void;
 
 /** Lets a burst of moves through at most once every `ms`; `wait` says how long until the next may go. */
@@ -16,8 +19,8 @@ export function throttle(ms: number) {
     take(now: number) { if (now - last < ms) return false; last = now; return true; },
   };
 }
-/** One bounds update per frame at 120 Hz is plenty; a drag reports the position far more often. */
-const BOUNDS_MS = 8;
+/** At most one bounds update per 60 Hz frame; every one moves the island's window. */
+const BOUNDS_MS = 16;
 /** How long a worker blocks while nothing happens; it can be stopped in between. */
 const IDLE_MS = 250;
 
@@ -53,7 +56,8 @@ function loop(step: () => void) {
 
 // ---- Windows -----------------------------------------------------------------------------------------------------
 
-const EVENT_SYSTEM_FOREGROUND = 0x0003, EVENT_OBJECT_LOCATIONCHANGE = 0x800b, WINEVENT_OUTOFCONTEXT = 0;
+const EVENT_SYSTEM_FOREGROUND = 0x0003, EVENT_SYSTEM_MOVESIZESTART = 0x000a, EVENT_SYSTEM_MOVESIZEEND = 0x000b;
+const EVENT_OBJECT_LOCATIONCHANGE = 0x800b, WINEVENT_OUTOFCONTEXT = 0;
 const OBJID_WINDOW = 0, CHILDID_SELF = 0, QS_ALLINPUT = 0x04ff, MWMO_INPUTAVAILABLE = 0x0004, PM_REMOVE = 0x0001;
 const DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 
@@ -61,6 +65,10 @@ const DWMWA_EXTENDED_FRAME_BOUNDS = 9;
  * Foreground changes come from a global hook (rare); moves only from a hook on the foreground window's process,
  * re-registered whenever another window comes to the front, so the rest of the desktop costs nothing. Out-of-context
  * hooks are delivered through this thread's message queue, hence the pump.
+ *
+ * While the user drags or resizes that window (the system's move/size loop), the move hook is off and only the start
+ * and end are reported: moving the island's topmost, transparent window on every frame of a drag made the drag itself
+ * stutter on real GPUs (1.2.0-beta.6).
  */
 export function win32WindowEvents(koffi: KoffiModule & { proto(definition: string): unknown; register(callback: Function, type: unknown): unknown; pointer(type: unknown): unknown }, post: Post) {
   const user32 = koffi.load("user32.dll"), dwmapi = koffi.load("dwmapi.dll");
@@ -78,19 +86,28 @@ export function win32WindowEvents(koffi: KoffiModule & { proto(definition: strin
   const dispatch = user32.func("intptr_t __stdcall DispatchMessageW(void *msg)");
 
   let hwnd: unknown = null, address = 0n, pid = 0, moveHook: unknown = null, switched = true, moved = false;
+  // The window a drag started or ended on: compared only after a pending foreground switch, because clicking an
+  // inactive window's title bar and dragging right away brings both events in one go.
+  let dragging = false, dragStarted = 0n, dragEnded = 0n;
   const callback = koffi.register((_hook: unknown, event: number, window: unknown, object: number, child: number) => {
-    if (event === EVENT_SYSTEM_FOREGROUND) switched = true;
-    else if (object === OBJID_WINDOW && child === CHILDID_SELF && window && koffi.address(window) === address) moved = true;
+    if (event === EVENT_SYSTEM_FOREGROUND) { switched = true; return; }
+    if (object !== OBJID_WINDOW || child !== CHILDID_SELF || !window) return;
+    if (event === EVENT_SYSTEM_MOVESIZESTART) dragStarted = koffi.address(window);
+    else if (event === EVENT_SYSTEM_MOVESIZEEND) dragEnded = koffi.address(window);
+    else if (koffi.address(window) === address) moved = true;
   }, koffi.pointer(proc));
-  if (!setHook(EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND, null, callback, 0, 0, WINEVENT_OUTOFCONTEXT)) throw new Error("SetWinEventHook failed");
+  for (const [min, max] of [[EVENT_SYSTEM_FOREGROUND, EVENT_SYSTEM_FOREGROUND], [EVENT_SYSTEM_MOVESIZESTART, EVENT_SYSTEM_MOVESIZEEND]] as const) {
+    if (!setHook(min, max, null, callback, 0, 0, WINEVENT_OUTOFCONTEXT)) throw new Error("SetWinEventHook failed");
+  }
+  const hookMoves = () => { if (moveHook) unhook(moveHook); moveHook = pid && !dragging ? setHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, null, callback, pid, 0, WINEVENT_OUTOFCONTEXT) : null; };
 
   function follow() {
     hwnd = foregroundWindow();
     address = hwnd ? koffi.address(hwnd) : 0n;
     const out = [0];
     pid = hwnd && windowProcess(hwnd, out) ? out[0]! : 0;
-    if (moveHook) unhook(moveHook);
-    moveHook = pid ? setHook(EVENT_OBJECT_LOCATIONCHANGE, EVENT_OBJECT_LOCATIONCHANGE, null, callback, pid, 0, WINEVENT_OUTOFCONTEXT) : null;
+    dragging = false;
+    hookMoves();
     post({ type: "foreground", pid });
   }
   function bounds() {
@@ -105,7 +122,11 @@ export function win32WindowEvents(koffi: KoffiModule & { proto(definition: strin
     wait(0, null, moved ? pace.wait(Date.now()) : IDLE_MS, QS_ALLINPUT, MWMO_INPUTAVAILABLE);
     while (peek(message, null, 0, 0, PM_REMOVE)) { translate(message); dispatch(message); }
     if (switched) { switched = false; follow(); moved = true; }
-    if (moved && pace.take(Date.now())) { moved = false; bounds(); }
+    const started = dragStarted === address && !!address, ended = dragEnded === address && !!address;
+    dragStarted = dragEnded = 0n;
+    if (started) { dragging = true; hookMoves(); moved = false; post({ type: "drag", pid, active: true }); }
+    if (ended && dragging) { dragging = false; hookMoves(); post({ type: "drag", pid, active: false }); moved = true; }
+    if (moved && !dragging && pace.take(Date.now())) { moved = false; bounds(); }
   });
 }
 
