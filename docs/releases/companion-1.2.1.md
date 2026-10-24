@@ -1,0 +1,1 @@
+**Fix (desktop island, Windows):** the island still covered the tray menu of Claude and other Electron apps in [1.2.0](companion-1.2.0.md). An Electron tray menu is itself the window in front, so the island took it for the AI app. The island now recognises these menus and steps aside while one is open, and comes back once it closes.
