@@ -29,6 +29,7 @@ const api: MeterkatApi = {
   checkUpdate: () => invoke(CHANNEL.checkUpdate),
   installUpdate: () => invoke(CHANNEL.installUpdate),
   setAutomaticUpdates: enabled => invoke(CHANNEL.automaticUpdates, enabled),
+  setUpdateChannel: channel => invoke(CHANNEL.updateChannel, channel),
   open: link => invoke(CHANNEL.open, link),
   hide: () => void invoke(CHANNEL.hide),
   quit: () => void invoke(CHANNEL.quit),

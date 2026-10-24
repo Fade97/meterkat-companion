@@ -12,7 +12,7 @@ import { detectProviders } from "../../src/providers.js";
 import { defaultRelay } from "../../src/registration.js";
 import { isV2, pairingLinkV2, uploadV2, writerCall, type V2Config } from "../../src/relay-v2.js";
 import { readState, relayUrl, stateDirectory, writeState, type Config } from "../../src/state.js";
-import { automaticUpdates, checkForUpdate, compareVersions, setAutomatic, updateSettings, type Release } from "../../src/update.js";
+import { automaticUpdates, checkForUpdate, compareVersions, isPrerelease, setAutomatic, setChannel, updateChannel, updateSettings, type Release, type UpdateChannel } from "../../src/update.js";
 import { COMPANION_VERSION } from "../../src/version.js";
 import { unsupportedReason } from "./foreground.js";
 import { trayLines, type BarMode } from "./format.js";
@@ -49,7 +49,7 @@ const settings = () => readState<DesktopSettings>("desktop.json") ?? {};
 const saveSettings = (patch: DesktopSettings) => writeState("desktop.json", { ...settings(), ...patch });
 const sync: AppState["sync"] = { mode: "app", running: false, lastSuccess: null, error: null };
 const install = installation(process.env, process.platform, process.arch, process.execPath, app.isPackaged);
-const update: AppState["update"] = { latest: null, newer: false, checkedAt: null, error: null, ...lastCheck(), install: install.kind === "manual" ? "manual" : "auto", automatic: true, downloading: false, ready: null };
+const update: AppState["update"] = { latest: null, newer: false, checkedAt: null, error: null, ...lastCheck(), install: install.kind === "manual" ? "manual" : "auto", automatic: true, channel: "stable", downloading: false, ready: null };
 let release: Release | null = null;
 let lastAttempt = 0;
 let prepared: Prepared | null = null;
@@ -111,7 +111,7 @@ function state(): AppState {
     // The service writes snapshot.json before every upload; that is the app's only view of its progress.
     sync: sync.mode === "service" ? { ...sync, lastSuccess: data?.generatedAt ?? null } : { ...sync },
     autostart: { supported: autostart.supported, app: autostart.enabled, service: serviceInstalled },
-    update: { ...update, automatic: automaticUpdates() },
+    update: { ...update, automatic: automaticUpdates(), channel: updateChannel() },
     island: { enabled: islandEnabled(), anchor: islandAnchor(), unsupported: island?.unsupported ?? unsupportedReason(process.platform, process.env) },
     bars: barMode(),
   };
@@ -174,11 +174,11 @@ async function tick() {
 
 // ---- Updates ---------------------------------------------------------------------------------------------------
 
-/** Daily check. With automatic updates on, a newer release is downloaded and verified in the background. */
+/** Daily check on the chosen channel. With automatic updates on, a newer release is downloaded and verified in the background. */
 async function checkUpdate(manual: boolean) {
   lastAttempt = Date.now();
   try {
-    const result = await checkForUpdate(fetch, COMPANION_VERSION);
+    const result = await checkForUpdate(fetch, COMPANION_VERSION, updateChannel() === "beta");
     release = result.release ?? null;
     Object.assign(update, { latest: release?.version ?? null, newer: result.newer, checkedAt: Date.now(), error: null });
     saveSettings({ updateCheckedAt: Date.now(), updateLatest: release?.version });
@@ -231,6 +231,19 @@ async function installUpdate() {
     update.error = error instanceof Error ? error.message : "Update failed"; changed();
     throw error;
   }
+}
+
+/**
+ * A new channel forgets the last check and asks again; a failed check shows in the update state. A beta installer that is
+ * only downloaded is dropped when leaving beta; an AppImage beta is already swapped in and stays, like an installed beta,
+ * until a newer release.
+ */
+async function setUpdateChannel(channel: UpdateChannel) {
+  setChannel(channel);
+  release = null; Object.assign(update, { latest: null, newer: false, error: null });
+  if (channel === "stable" && prepared?.kind === "nsis" && isPrerelease(prepared.version)) { prepared = null; update.ready = null; }
+  changed();
+  if (!preparing) await checkUpdate(false);
 }
 
 /** Quits and starts the new version: the swapped AppImage, or the installer, which restarts the app itself. */
@@ -402,6 +415,7 @@ function registerIpc() {
   handle(CHANNEL.checkUpdate, () => checkUpdate(true));
   handle(CHANNEL.installUpdate, () => installUpdate());
   handle(CHANNEL.automaticUpdates, (enabled: unknown) => { try { setAutomatic(enabled === true); } finally { changed(); } });
+  handle(CHANNEL.updateChannel, (channel: unknown) => setUpdateChannel(channel === "beta" ? "beta" : "stable"));
   handle(CHANNEL.open, (link: unknown) => {
     if (link === "licenses") return shell.openPath(join(process.resourcesPath, "THIRD_PARTY_NOTICES.txt"));
     const url = LINKS[link as keyof typeof LINKS];

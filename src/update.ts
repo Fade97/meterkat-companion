@@ -2,13 +2,13 @@ import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { chmodSync, closeSync, existsSync, linkSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeSync } from "node:fs";
 import { basename, dirname, extname, join } from "node:path";
-import { COMPANION_VERSION } from "./version.js";
+import { COMPANION_VERSION, DEV_VERSION } from "./version.js";
 import { readState, writeState } from "./state.js";
 import { RELEASE_PUBLIC_KEYS, verifySignature } from "./release-key.js";
 
 // Self-update for the packaged single-file companion from this repository's GitHub releases (binaries built
 // by its release workflow, signed by the maintainer). Releases are tagged `companion-v<semver>`; drafts are never visible and
-// prereleases are ignored unless explicitly requested. SHA256SUMS must carry a valid Ed25519 signature by an
+// prereleases are only considered on the beta update channel. SHA256SUMS must carry a valid Ed25519 signature by an
 // embedded release key (SHA256SUMS.sig); the binary must then match its signed checksum, its size and the digest
 // GitHub reports. Updating never touches autostart: the binary is replaced at the same path.
 export const UPDATE_REPO = process.env.AI_USAGE_UPDATE_REPO ?? "Fade97/meterkat-companion";
@@ -23,7 +23,10 @@ export type Asset = { name: string; size: number; url: string; digest?: string |
 export type Release = { tag: string; version: string; assets: Asset[] };
 export type Fetch = typeof fetch;
 export type Runner = (file: string, args: string[]) => { status: number | null; stdout: string };
-export type UpdateSettings = { automatic?: boolean; lastCheck?: number; skipped?: string };
+/** stable: releases only. beta: prereleases too (e.g. 1.2.0-beta.1), whichever version is highest. */
+export type UpdateChannel = "stable" | "beta";
+export const UPDATE_CHANNELS: readonly UpdateChannel[] = ["stable", "beta"];
+export type UpdateSettings = { automatic?: boolean; lastCheck?: number; skipped?: string; channel?: UpdateChannel };
 export type UpdateResult = { status: "current" | "updated" | "rolled-back" | "unavailable"; version: string; message: string };
 
 export const osName = (platform: NodeJS.Platform) => platform === "win32" ? "windows" : platform;
@@ -60,10 +63,7 @@ export const isPrerelease = (version: string) => !!parseVersion(version)?.pre;
 
 // Unauthenticated: the releases repository is public and no credential ever reaches the updater.
 const headers = (): Record<string, string> => ({ Accept: "application/vnd.github+json", "User-Agent": `meterkat-companion/${COMPANION_VERSION}` });
-/** Prereleases are opt-in (testing): `update --prerelease` or AI_USAGE_UPDATE_PRERELEASE=1. */
-export const prereleasesWanted = (env: NodeJS.ProcessEnv = process.env) => env.AI_USAGE_UPDATE_PRERELEASE === "1";
-
-export async function latestRelease(fetchImpl: Fetch = fetch, repo = UPDATE_REPO, prerelease = prereleasesWanted()): Promise<Release | undefined> {
+export async function latestRelease(fetchImpl: Fetch = fetch, repo = UPDATE_REPO, prerelease = false): Promise<Release | undefined> {
   const response = await fetchImpl(`https://api.github.com/repos/${repo}/releases?per_page=50`, { headers: headers(), signal: AbortSignal.timeout(20_000), redirect: "error" });
   if (response.status === 404) throw new Error(`Release source ${repo} not found or not public`);
   if (!response.ok) throw new Error(`Release check failed (${response.status})`);
@@ -212,11 +212,28 @@ export function recoverInterruptedSwap(target: string) {
 }
 
 export const updateSettings = () => readState<UpdateSettings>("update.json") ?? {};
+/**
+ * The chosen channel (`update channel`, the desktop settings); AI_USAGE_UPDATE_PRERELEASE=1 forces beta. Without a
+ * choice, a beta installation stays on beta and a release on stable. Leaving beta never downgrades: the installed
+ * prerelease stays until a newer release.
+ */
+export function updateChannel(env: NodeJS.ProcessEnv = process.env, current = COMPANION_VERSION): UpdateChannel {
+  if (env.AI_USAGE_UPDATE_PRERELEASE === "1") return "beta";
+  const chosen = updateSettings().channel;
+  if (chosen && UPDATE_CHANNELS.includes(chosen)) return chosen;
+  return isPrerelease(current) && current !== DEV_VERSION ? "beta" : "stable";
+}
+export function setChannel(channel: UpdateChannel) {
+  if (!UPDATE_CHANNELS.includes(channel)) throw new Error(`Unknown update channel ${channel}; use ${UPDATE_CHANNELS.join(" or ")}`);
+  writeState("update.json", { ...updateSettings(), channel });
+}
+/** Prereleases are considered on the beta channel; `update --prerelease` asks for them once. */
+export const prereleasesWanted = (env: NodeJS.ProcessEnv = process.env, current = COMPANION_VERSION) => updateChannel(env, current) === "beta";
 /** Automatic updates are on by default for packaged builds and can be turned off with `update disable` or AI_USAGE_NO_UPDATE=1. */
 export const automaticUpdates = (env: NodeJS.ProcessEnv = process.env) => env.AI_USAGE_NO_UPDATE !== "1" && updateSettings().automatic !== false;
 export function setAutomatic(automatic: boolean) { writeState("update.json", { ...updateSettings(), automatic }); }
 
-export async function checkForUpdate(fetchImpl: Fetch = fetch, current = COMPANION_VERSION, prerelease = prereleasesWanted()) {
+export async function checkForUpdate(fetchImpl: Fetch = fetch, current = COMPANION_VERSION, prerelease = prereleasesWanted(process.env, current)) {
   const release = await latestRelease(fetchImpl, UPDATE_REPO, prerelease);
   return { release, newer: !!release && compareVersions(release.version, current) > 0 };
 }
@@ -251,7 +268,7 @@ export async function downloadVerified(fetchImpl: Fetch, release: Release, name:
 export type UpdateOptions = { fetch?: Fetch; runner?: Runner; current?: string; platform?: NodeJS.Platform; arch?: string; prerelease?: boolean; keys?: readonly string[]; automatic?: boolean };
 export async function update(target: string, options: UpdateOptions = {}): Promise<UpdateResult> {
   const fetchImpl = options.fetch ?? fetch; const current = options.current ?? COMPANION_VERSION;
-  const { release, newer } = await checkForUpdate(fetchImpl, current, options.prerelease ?? prereleasesWanted());
+  const { release, newer } = await checkForUpdate(fetchImpl, current, options.prerelease ?? prereleasesWanted(process.env, current));
   writeState("update.json", { ...updateSettings(), lastCheck: Date.now() });
   if (!release) return { status: "unavailable", version: current, message: "No companion release found." };
   if (!newer) return { status: "current", version: current, message: `Companion ${current} is up to date.` };

@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, relative } from "node:path";
 import { createRequire } from "node:module";
 import { fileURLToPath } from "node:url";
-import { allowedDownloadUrl, checksumFor, compareVersions, download, latestRelease, recoverInterruptedSwap, releaseAssetName, rollback, sidePaths, swapExecutable, update, updateSettings, type Fetch, type Runner } from "../src/update.js";
+import { allowedDownloadUrl, checkForUpdate, checksumFor, compareVersions, download, latestRelease, recoverInterruptedSwap, releaseAssetName, rollback, setChannel, sidePaths, swapExecutable, update, updateChannel, updateSettings, type Fetch, type Runner, type UpdateChannel } from "../src/update.js";
 import { realpathSync, symlinkSync } from "node:fs";
 import { stripPeSignature, thirdPartyNotices } from "../scripts/package.js";
 import { RELEASE_PUBLIC_KEYS, verifySignature } from "../src/release-key.js";
@@ -67,6 +67,29 @@ test("prereleases are ignored unless explicitly requested, judged by the version
   const list = [release("1.0.0").json, { ...release("1.1.0-test.1").json, prerelease: false }, { ...release("0.9.0").json, prerelease: true }];
   assert.equal((await latestRelease(releaseServer(list, {}), "o/r", false))?.version, "1.0.0");
   assert.equal((await latestRelease(releaseServer(list, {}), "o/r", true))?.version, "1.1.0-test.1");
+});
+
+test("update channel: a beta installation defaults to beta, a choice sticks, the environment forces beta", t => {
+  sandbox(t);
+  const env = {};
+  assert.equal(updateChannel(env, "1.1.1"), "stable");
+  assert.equal(updateChannel(env, "1.2.0-beta.4"), "beta");
+  assert.equal(updateChannel(env, "0.0.0-dev"), "stable");
+  setChannel("stable"); assert.equal(updateChannel(env, "1.2.0-beta.4"), "stable");
+  setChannel("beta"); assert.equal(updateChannel(env, "1.1.1"), "beta");
+  setChannel("stable"); assert.equal(updateChannel({ AI_USAGE_UPDATE_PRERELEASE: "1" }, "1.1.1"), "beta");
+  assert.throws(() => setChannel("nightly" as UpdateChannel), /Unknown update channel/);
+  assert.equal(updateSettings().channel, "stable");
+});
+
+test("the beta channel finds the next beta; back on stable, a beta stays until a newer release", async t => {
+  sandbox(t);
+  const list = [release("1.1.1").json, release("1.2.0-beta.4").json, release("1.2.0-beta.5").json];
+  const check = () => checkForUpdate(releaseServer(list, {}), "1.2.0-beta.4");
+  setChannel("beta"); assert.deepEqual(await check().then(r => [r.release?.version, r.newer]), ["1.2.0-beta.5", true]);
+  setChannel("stable"); assert.deepEqual(await check().then(r => [r.release?.version, r.newer]), ["1.1.1", false]);
+  const stable = await checkForUpdate(releaseServer([...list, release("1.2.0").json], {}), "1.2.0-beta.5");
+  assert.deepEqual([stable.release?.version, stable.newer], ["1.2.0", true]);
 });
 
 test("embedded release key verifies only well-formed Ed25519 signatures", () => {
