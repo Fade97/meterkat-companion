@@ -257,6 +257,8 @@ export function createIsland(options: IslandOptions) {
       if (++failures === 5) console.warn(`Meterkat island: cannot read the foreground window (${error instanceof Error ? error.message : error})`);
     }
     if (reading?.window.fullscreen && reading.pid !== process.pid) { hideWindow(); return; }
+    // A tray or context menu is topmost too; the re-raise below would put the island over it.
+    if (reading?.menu) { hideWindow(); return; }
     const ai = !!reading && reading.pid !== process.pid && isAiWindow(reading.window);
     misses = ai ? 0 : misses + 1;
     const nextVisible = !dragging && (ai || (visible && misses < HIDE_AFTER));
