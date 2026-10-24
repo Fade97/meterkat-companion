@@ -12,9 +12,10 @@ export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; width: number; height: number };
 /**
  * A foreground window, a point on it (DIP) used to pick the display the island goes to, and its visible frame (DIP)
- * for pinning the island to its top edge; null where it is unknown.
+ * for pinning the island to its top edge; null where it is unknown. `menu`: a tray or context menu is open, so the
+ * island gets out of the way (Windows; X11 menus are not reported).
  */
-export type ForegroundReading = { window: ForegroundWindow; anchor: Point | null; bounds: Rect | null; pid: number };
+export type ForegroundReading = { window: ForegroundWindow; anchor: Point | null; bounds: Rect | null; pid: number; menu?: boolean };
 
 export interface ForegroundProbe {
   read(): Promise<ForegroundReading | null>;
@@ -232,6 +233,12 @@ function pixelLuminance(shot: Thumbnail, p: Point): number | null {
 
 // ---- Windows (Win32 through koffi) -----------------------------------------------------------------------------
 
+/** A menu is open: a native popup menu (#32768) is on screen, or a hidden helper window holds the focus, which is what
+ *  tray apps (Electron and Win32 alike) make the foreground window while their tray menu is up. */
+export function menuOpen(foregroundVisible: boolean, popupMenuVisible: boolean) {
+  return popupMenuVisible || !foregroundVisible;
+}
+
 /** The part of koffi the bindings use. */
 export interface KoffiModule {
   load(path: string): { func(definition: string): (...args: any[]) => any };
@@ -257,6 +264,8 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
   const windowProcess = user32.func("uint32 __stdcall GetWindowThreadProcessId(void *hwnd, _Out_ uint32 *pid)");
   const windowText = user32.func("int32 __stdcall GetWindowTextW(void *hwnd, void *text, int32 max)");
   const className = user32.func("int32 __stdcall GetClassNameW(void *hwnd, void *name, int32 max)");
+  const isWindowVisible = user32.func("int32 __stdcall IsWindowVisible(void *hwnd)");
+  const findWindowEx = user32.func("void * __stdcall FindWindowExW(void *parent, void *after, str16 cls, str16 title)");
   const windowRect = user32.func("int32 __stdcall GetWindowRect(void *hwnd, _Out_ MK_RECT *rect)");
   // GetWindowRect includes the invisible resize borders (about 7 px left, right and below); DWM knows the visible frame.
   const frameBounds = dwmapi.func("int32 __stdcall DwmGetWindowAttribute(void *hwnd, uint32 attribute, _Out_ MK_RECT *value, uint32 size)");
@@ -289,6 +298,12 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
       }
     } finally { closeHandle(handle); }
     return { exe, children };
+  }
+
+  function popupMenuVisible() {
+    let hwnd = findWindowEx(null, null, "#32768", null);
+    for (let i = 0; hwnd && i < 32; i++, hwnd = findWindowEx(null, hwnd, "#32768", null)) if (isWindowVisible(hwnd)) return true;
+    return false;
   }
 
   function descendants(root: number, tree: ReturnType<typeof processes>) {
@@ -325,7 +340,8 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
       const visible = {} as Win32Rect;
       const frame = hasRect && !desktop && frameBounds(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, visible, koffi.sizeof(RECT)) === 0 ? visible : rect;
       const bounds = hasRect ? toDip({ x: frame.left, y: frame.top, width: frame.right - frame.left, height: frame.bottom - frame.top }) : null;
-      return { window, pid, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null, bounds };
+      const menu = menuOpen(!!isWindowVisible(hwnd), popupMenuVisible());
+      return { window, pid, menu, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null, bounds };
     },
     async luminance(points) {
       const dc = getDC(null);

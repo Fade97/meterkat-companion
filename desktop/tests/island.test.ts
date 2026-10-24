@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
-import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseExtents, parseWindowInfo, parseWindowProps, threadedProbe, visibleFrame, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
+import { linuxDescendants, luminance, menuOpen, nextTone, parseActiveWindow, parseExtents, parseWindowInfo, parseWindowProps, threadedProbe, visibleFrame, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
 import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, oneClick, samplePoints } from "../src/island-shape.js";
 
@@ -181,6 +181,12 @@ test("the island runs on Windows and X11, not on Wayland", () => {
   assert.match(unsupportedReason("linux", { DISPLAY: ":0", XDG_SESSION_TYPE: "wayland" }) ?? "", /Wayland/);
   assert.match(unsupportedReason("darwin", {}) ?? "", /Not available/);
   assert.ok(luminance(255, 255, 255) > 0.99 && luminance(0, 0, 0) === 0);
+});
+
+test("an open tray or context menu is recognised from a hidden foreground window or a visible popup menu", () => {
+  assert.equal(menuOpen(true, false), false);
+  assert.equal(menuOpen(false, false), true); // tray apps focus a hidden helper window while their menu is up
+  assert.equal(menuOpen(true, true), true);
 });
 
 test("the drop turns ink on light backgrounds and white on dark ones, with a dead band in between", () => {
