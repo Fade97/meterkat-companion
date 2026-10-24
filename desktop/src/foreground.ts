@@ -233,10 +233,19 @@ function pixelLuminance(shot: Thumbnail, p: Point): number | null {
 
 // ---- Windows (Win32 through koffi) -----------------------------------------------------------------------------
 
-/** A menu is open: a native popup menu (#32768) is on screen, or a hidden helper window holds the focus, which is what
- *  tray apps (Electron and Win32 alike) make the foreground window while their tray menu is up. */
-export function menuOpen(foregroundVisible: boolean, popupMenuVisible: boolean) {
-  return popupMenuVisible || !foregroundVisible;
+const WS_POPUP = 0x80000000, WS_CAPTION = 0x00c00000, WS_EX_TOPMOST = 0x8, WS_EX_TOOLWINDOW = 0x80;
+/** The foreground window as far as menu detection needs it: visibility and its GWL_STYLE / GWL_EXSTYLE bits. */
+export type ForegroundStyle = { visible: boolean; style: number; exStyle: number };
+
+/**
+ * A menu is open: a native popup menu (#32768) is on screen, a hidden helper window holds the focus (Win32 tray apps
+ * while their menu is up), or the focus is on a topmost, captionless tool popup. The latter is how Electron and
+ * Chromium menus look: an Electron tray menu (Claude's) is itself the foreground window, of the app's process.
+ */
+export function menuOpen(foreground: ForegroundStyle, popupMenuVisible: boolean) {
+  if (popupMenuVisible || !foreground.visible) return true;
+  const style = foreground.style >>> 0, ex = foreground.exStyle >>> 0;
+  return (style & WS_POPUP) !== 0 && (style & WS_CAPTION) === 0 && (ex & WS_EX_TOPMOST) !== 0 && (ex & WS_EX_TOOLWINDOW) !== 0;
 }
 
 /** The part of koffi the bindings use. */
@@ -249,7 +258,7 @@ export interface KoffiModule {
 }
 
 type Win32Rect = { left: number; top: number; right: number; bottom: number };
-const MONITOR_DEFAULTTONEAREST = 2, TH32CS_SNAPPROCESS = 2, CLR_INVALID = 0xffffffff, DWMWA_EXTENDED_FRAME_BOUNDS = 9;
+const MONITOR_DEFAULTTONEAREST = 2, TH32CS_SNAPPROCESS = 2, CLR_INVALID = 0xffffffff, DWMWA_EXTENDED_FRAME_BOUNDS = 9, GWL_STYLE = -16, GWL_EXSTYLE = -20;
 
 export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, toScreen: (point: Point) => Point): ForegroundProbe {
   const user32 = koffi.load("user32.dll"), gdi32 = koffi.load("gdi32.dll"), kernel32 = koffi.load("kernel32.dll"), dwmapi = koffi.load("dwmapi.dll");
@@ -265,6 +274,7 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
   const windowText = user32.func("int32 __stdcall GetWindowTextW(void *hwnd, void *text, int32 max)");
   const className = user32.func("int32 __stdcall GetClassNameW(void *hwnd, void *name, int32 max)");
   const isWindowVisible = user32.func("int32 __stdcall IsWindowVisible(void *hwnd)");
+  const windowLong = user32.func("intptr_t __stdcall GetWindowLongPtrW(void *hwnd, int32 index)");
   const findWindowEx = user32.func("void * __stdcall FindWindowExW(void *parent, void *after, str16 cls, str16 title)");
   const windowRect = user32.func("int32 __stdcall GetWindowRect(void *hwnd, _Out_ MK_RECT *rect)");
   // GetWindowRect includes the invisible resize borders (about 7 px left, right and below); DWM knows the visible frame.
@@ -340,7 +350,7 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
       const visible = {} as Win32Rect;
       const frame = hasRect && !desktop && frameBounds(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, visible, koffi.sizeof(RECT)) === 0 ? visible : rect;
       const bounds = hasRect ? toDip({ x: frame.left, y: frame.top, width: frame.right - frame.left, height: frame.bottom - frame.top }) : null;
-      const menu = menuOpen(!!isWindowVisible(hwnd), popupMenuVisible());
+      const menu = menuOpen({ visible: !!isWindowVisible(hwnd), style: Number(windowLong(hwnd, GWL_STYLE)), exStyle: Number(windowLong(hwnd, GWL_EXSTYLE)) }, popupMenuVisible());
       return { window, pid, menu, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null, bounds };
     },
     async luminance(points) {
