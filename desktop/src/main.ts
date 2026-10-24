@@ -17,7 +17,7 @@ import { COMPANION_VERSION } from "../../src/version.js";
 import { unsupportedReason } from "./foreground.js";
 import { trayLines, type BarMode } from "./format.js";
 import { createIsland } from "./island.js";
-import { CHANNEL, type AppState, type Device, type ExternalLink, type Pairing, type SyncMode, type View } from "./ipc.js";
+import { CHANNEL, type AppState, type Device, type ExternalLink, type IslandAnchor, type Pairing, type SyncMode, type View } from "./ipc.js";
 import { autostartFile, HIDDEN_ARG, launchCommand, linuxAutostart, LOGIN_ITEM_NAME } from "./login-item.js";
 import { cleanUp, installation, launch, prepare, spawnDetached, UPDATED_ARG, VERSION_ARG, type Prepared } from "./self-update.js";
 import { backgroundPid, cliServiceRunning } from "./service.js";
@@ -34,7 +34,7 @@ const LINKS: Record<Exclude<ExternalLink, "licenses">, string> = {
   terms: "https://meterkat.fabian-duerkop.de/terms",
   privacy: "https://meterkat.fabian-duerkop.de/privacy",
 };
-type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean; island?: boolean; showRemaining?: boolean };
+type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean; island?: boolean; islandAnchor?: IslandAnchor; showRemaining?: boolean };
 
 const assets = join(app.getAppPath(), "assets");
 let win: BrowserWindow | null = null;
@@ -112,7 +112,7 @@ function state(): AppState {
     sync: sync.mode === "service" ? { ...sync, lastSuccess: data?.generatedAt ?? null } : { ...sync },
     autostart: { supported: autostart.supported, app: autostart.enabled, service: serviceInstalled },
     update: { ...update, automatic: automaticUpdates() },
-    island: { enabled: islandEnabled(), unsupported: island?.unsupported ?? unsupportedReason(process.platform, process.env) },
+    island: { enabled: islandEnabled(), anchor: islandAnchor(), unsupported: island?.unsupported ?? unsupportedReason(process.platform, process.env) },
     bars: barMode(),
   };
 }
@@ -127,6 +127,12 @@ const islandEnabled = () => settings().island !== false;
 function setIsland(enabled: boolean) {
   saveSettings({ island: enabled });
   island?.refresh(); changed();
+}
+
+const islandAnchor = (): IslandAnchor => settings().islandAnchor === "window" ? "window" : "screen";
+function setIslandAnchor(anchor: IslandAnchor) {
+  saveSettings({ islandAnchor: anchor });
+  changed();
 }
 
 function changed() {
@@ -348,7 +354,10 @@ function buildTray(current: AppState) {
     { label: "Connect a phone…", enabled: current.registration?.protocol === 2, click: () => showWindow("phones") },
     { type: "separator" },
     ...(current.autostart.supported ? [{ label: "Start at sign-in", type: "checkbox" as const, checked: current.autostart.app, click: (item: Electron.MenuItem) => { try { appAutostart().set(item.checked); } finally { changed(); } } }] : []),
-    ...(!current.island.unsupported ? [{ label: "Show island at the top edge", type: "checkbox" as const, checked: current.island.enabled, click: (item: Electron.MenuItem) => setIsland(item.checked) }] : []),
+    ...(!current.island.unsupported ? [
+      { label: "Show island at the top edge", type: "checkbox" as const, checked: current.island.enabled, click: (item: Electron.MenuItem) => setIsland(item.checked) },
+      { label: "Pin island to the AI window", type: "checkbox" as const, checked: current.island.anchor === "window", enabled: current.island.enabled, click: (item: Electron.MenuItem) => setIslandAnchor(item.checked ? "window" : "screen") },
+    ] : []),
     ...updateItems(current.update),
     { type: "separator" },
     { label: "Quit Meterkat", click: () => app.quit() },
@@ -387,6 +396,7 @@ function registerIpc() {
   handle(CHANNEL.revokeAll, () => revokeAll());
   handle(CHANNEL.autostart, (enabled: unknown) => { try { appAutostart().set(enabled === true); } finally { changed(); } });
   handle(CHANNEL.island, (enabled: unknown) => setIsland(enabled === true));
+  handle(CHANNEL.islandAnchor, (anchor: unknown) => setIslandAnchor(anchor === "window" ? "window" : "screen"));
   handle(CHANNEL.barMode, (mode: unknown) => setBarMode(mode === "remaining" ? "remaining" : "used"));
   handle(CHANNEL.takeOver, () => takeOver());
   handle(CHANNEL.checkUpdate, () => checkUpdate(true));
@@ -432,7 +442,7 @@ else {
     // (unless the next update is already on its way).
     setTimeout(() => { if (!prepared && !preparing) cleanUp(install, join(app.getPath("userData"), "updates")); }, 30_000);
     island = createIsland({
-      snapshot, enabled: islandEnabled, mode: barMode, demo: process.env.METERKAT_ISLAND_DEMO === "1",
+      snapshot, enabled: islandEnabled, mode: barMode, anchor: islandAnchor, demo: process.env.METERKAT_ISLAND_DEMO === "1",
       preload: join(__dirname, "island-preload.cjs"), page: join(__dirname, "island", "island.html"),
       probeWorker: join(__dirname, "foreground-worker.cjs"),
     });

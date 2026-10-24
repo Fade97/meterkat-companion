@@ -1,4 +1,4 @@
-// Outline of the island: a circle (or pill, or rounded panel) hanging from the top screen edge. Left and right a concave quarter arc
+// Outline of the island: a circle (or pill, or rounded panel) hanging from the top screen (or window) edge. Left and right a concave quarter arc
 // leaves the edge tangentially and meets the circle at its leftmost and rightmost point, where the circle runs
 // vertically. The arc's height is fixed by the circle centre; its width is free, so the arc is elliptical.
 
@@ -79,10 +79,30 @@ export function missedClicks() {
   };
 }
 
-/** Screen points (DIP) left and right of the widest shape, just below the top edge of `display`. */
-export function samplePoints(display: { bounds: { x: number; y: number; width: number } }): { x: number; y: number }[] {
-  const centre = display.bounds.x + display.bounds.width / 2;
-  const half = islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }) / 2;
-  return [half + 24, half + 90].flatMap(dx => [3, 14].flatMap(dy => [{ x: centre - dx, y: display.bounds.y + dy }, { x: centre + dx, y: display.bounds.y + dy }]));
+/** Where the island hangs: the top edge of the display, or the top edge of the AI window in front. */
+export type IslandAnchor = "screen" | "window";
+type Box = { x: number; y: number; width: number; height: number };
+/** The point the island hangs from, in DIP: the centre of its top edge. */
+export type IslandEdge = { cx: number; y: number };
+
+/**
+ * The island's edge on `display`. Pinned to the window it sits centred on the window's top edge, but stays on the
+ * display: `margin` keeps the island's window (the open panel) inside it sideways, and a window whose top is above
+ * the display or too far down uses the nearest edge that leaves the drop on screen. Without window bounds it falls
+ * back to the top of the display.
+ */
+export function islandEdge(anchor: IslandAnchor, display: Box, window: Box | null, margin: number): IslandEdge {
+  const centre = { cx: display.x + display.width / 2, y: display.y };
+  if (anchor === "screen" || !window || !(window.width > 0 && window.height > 0)) return centre;
+  const clamp = (value: number, low: number, high: number) => low > high ? (low + high) / 2 : Math.min(Math.max(value, low), high);
+  return {
+    cx: Math.round(clamp(window.x + window.width / 2, display.x + margin, display.x + display.width - margin)),
+    y: Math.round(clamp(window.y, display.y, display.y + display.height - 4 * ISLAND_SIZES.idle.h)),
+  };
 }
 
+/** Screen points (DIP) left and right of the widest shape, just below the edge the island hangs from. */
+export function samplePoints(edge: IslandEdge): { x: number; y: number }[] {
+  const half = islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }) / 2;
+  return [half + 24, half + 90].flatMap(dx => [3, 14].flatMap(dy => [{ x: edge.cx - dx, y: edge.y + dy }, { x: edge.cx + dx, y: edge.y + dy }]));
+}

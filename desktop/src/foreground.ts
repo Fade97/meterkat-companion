@@ -10,8 +10,11 @@ import type { IslandTone } from "./ipc.js";
 const run = promisify(execFile);
 export type Point = { x: number; y: number };
 export type Rect = { x: number; y: number; width: number; height: number };
-/** A foreground window and a point on it (DIP), used to pick the display the island goes to. */
-export type ForegroundReading = { window: ForegroundWindow; anchor: Point | null; pid: number };
+/**
+ * A foreground window, a point on it (DIP) used to pick the display the island goes to, and its visible frame (DIP)
+ * for pinning the island to its top edge; null where it is unknown.
+ */
+export type ForegroundReading = { window: ForegroundWindow; anchor: Point | null; bounds: Rect | null; pid: number };
 
 export interface ForegroundProbe {
   read(): Promise<ForegroundReading | null>;
@@ -34,7 +37,7 @@ export interface ProbeWorker {
  * A probe running in a worker (foreground-worker.ts) in screen pixels, converted to DIP here. Should the worker fail
  * to start or die, requests go to `fallback` instead, on this thread.
  */
-export function threadedProbe(start: () => ProbeWorker, toDip: (point: Point) => Point, toScreen: (point: Point) => Point, fallback: () => ForegroundProbe): ForegroundProbe {
+export function threadedProbe(start: () => ProbeWorker, toDip: (point: Point) => Point, toDipRect: (rect: Rect) => Rect, toScreen: (point: Point) => Point, fallback: () => ForegroundProbe): ForegroundProbe {
   const pending = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void }>();
   let worker: ProbeWorker | null = null, local: ForegroundProbe | null = null, nextId = 1;
   const fail = (reason: unknown) => {
@@ -65,7 +68,7 @@ export function threadedProbe(start: () => ProbeWorker, toDip: (point: Point) =>
     async read() {
       if (!worker) return (local ??= fallback()).read();
       const reading = await ask({ op: "read" }) as ForegroundReading | null;
-      return reading && { ...reading, anchor: reading.anchor && toDip(reading.anchor) };
+      return reading && { ...reading, anchor: reading.anchor && toDip(reading.anchor), bounds: reading.bounds && toDipRect(reading.bounds) };
     },
     async luminance(points, displayId) {
       if (!worker) return (local ??= fallback()).luminance(points, displayId);
@@ -119,6 +122,29 @@ export function parseWindowProps(output: string) {
   return { app: classes[1] ?? classes[0] ?? "", title, pid, fullscreen };
 }
 
+/** `xwininfo -id <id>` → where the window's client area is on the root window, in screen pixels. */
+export function parseWindowInfo(output: string): Rect | null {
+  const value = (label: string) => Number(new RegExp(`^\\s*${label}:\\s*(-?\\d+)`, "m").exec(output)?.[1] ?? NaN);
+  const rect = { x: value("Absolute upper-left X"), y: value("Absolute upper-left Y"), width: value("Width"), height: value("Height") };
+  return Object.values(rect).every(Number.isFinite) && rect.width > 0 && rect.height > 0 ? rect : null;
+}
+
+/** `_NET_FRAME_EXTENTS` / `_GTK_FRAME_EXTENTS` from xprop → left, right, top, bottom, or null when absent. */
+export function parseExtents(output: string, name: "_NET_FRAME_EXTENTS" | "_GTK_FRAME_EXTENTS") {
+  const values = new RegExp(`^${name}(?:\\(\\w+\\))? = (\\d+), (\\d+), (\\d+), (\\d+)$`, "m").exec(output)?.slice(1).map(Number);
+  return values ? { left: values[0]!, right: values[1]!, top: values[2]!, bottom: values[3]! } : null;
+}
+
+/**
+ * The frame users see: the client area grown by the window manager's decorations (title bar) and shrunk by the
+ * invisible shadow margins that client-side decorated (GTK) windows draw into their own area.
+ */
+export function visibleFrame(client: Rect, frame: ReturnType<typeof parseExtents>, shadow: ReturnType<typeof parseExtents>): Rect {
+  const grow = frame ?? { left: 0, right: 0, top: 0, bottom: 0 }, shrink = shadow ?? { left: 0, right: 0, top: 0, bottom: 0 };
+  const left = grow.left - shrink.left, top = grow.top - shrink.top;
+  return { x: client.x - left, y: client.y - top, width: client.width + left + grow.right - shrink.right, height: client.height + top + grow.bottom - shrink.bottom };
+}
+
 /** Command lines of every process below `root`, read from /proc. */
 export function linuxDescendants(root: number, proc = "/proc", limit = 200): string[] {
   const children = new Map<number, number[]>();
@@ -143,14 +169,21 @@ export function linuxDescendants(root: number, proc = "/proc", limit = 200): str
 type Thumbnail = { displayId: string; width: number; height: number; bitmap: Buffer; scale: number; origin: Point };
 export type ScreenCapture = (displayId: number) => Promise<Thumbnail | null>;
 
-export function linuxProbe(capture: ScreenCapture, cursor: () => Point): ForegroundProbe {
+/** `wantBounds` says whether to ask for the window's frame too (one more process per reading); `toDip` converts it. */
+export function linuxProbe(capture: ScreenCapture, cursor: () => Point, wantBounds: () => boolean, toDip: (rect: Rect) => Rect): ForegroundProbe {
+  async function bounds(id: string, props: string): Promise<Rect | null> {
+    const client = parseWindowInfo((await run("xwininfo", ["-id", id], { timeout: 2000 })).stdout);
+    return client && toDip(visibleFrame(client, parseExtents(props, "_NET_FRAME_EXTENTS"), parseExtents(props, "_GTK_FRAME_EXTENTS")));
+  }
   return {
     async read() {
       const id = parseActiveWindow((await run("xprop", ["-root", "-notype", "_NET_ACTIVE_WINDOW"], { timeout: 2000 })).stdout);
       if (!id) return null;
-      const props = parseWindowProps((await run("xprop", ["-id", id, "-notype", "WM_CLASS", "_NET_WM_NAME", "_NET_WM_PID", "_NET_WM_STATE"], { timeout: 2000 })).stdout);
+      const output = (await run("xprop", ["-id", id, "-notype", "WM_CLASS", "_NET_WM_NAME", "_NET_WM_PID", "_NET_WM_STATE", "_NET_FRAME_EXTENTS", "_GTK_FRAME_EXTENTS"], { timeout: 2000 })).stdout;
+      const props = parseWindowProps(output);
       const descendants = props.pid && isTerminal(props.app) ? linuxDescendants(props.pid) : [];
-      return { window: { app: props.app, title: props.title, descendants, fullscreen: props.fullscreen }, anchor: cursor(), pid: props.pid };
+      const frame = wantBounds() ? await bounds(id, output).catch(() => null) : null;
+      return { window: { app: props.app, title: props.title, descendants, fullscreen: props.fullscreen }, anchor: cursor(), bounds: frame, pid: props.pid };
     },
     async luminance(points, displayId) {
       const shot = await capture(displayId);
@@ -209,10 +242,10 @@ export interface KoffiModule {
 }
 
 type Win32Rect = { left: number; top: number; right: number; bottom: number };
-const MONITOR_DEFAULTTONEAREST = 2, TH32CS_SNAPPROCESS = 2, CLR_INVALID = 0xffffffff;
+const MONITOR_DEFAULTTONEAREST = 2, TH32CS_SNAPPROCESS = 2, CLR_INVALID = 0xffffffff, DWMWA_EXTENDED_FRAME_BOUNDS = 9;
 
 export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, toScreen: (point: Point) => Point): ForegroundProbe {
-  const user32 = koffi.load("user32.dll"), gdi32 = koffi.load("gdi32.dll"), kernel32 = koffi.load("kernel32.dll");
+  const user32 = koffi.load("user32.dll"), gdi32 = koffi.load("gdi32.dll"), kernel32 = koffi.load("kernel32.dll"), dwmapi = koffi.load("dwmapi.dll");
   const RECT = koffi.struct("MK_RECT", { left: "int32", top: "int32", right: "int32", bottom: "int32" });
   const MONITORINFO = koffi.struct("MK_MONITORINFO", { cbSize: "uint32", rcMonitor: RECT, rcWork: RECT, dwFlags: "uint32" });
   const ENTRY = koffi.struct("MK_PROCESSENTRY32W", {
@@ -225,6 +258,8 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
   const windowText = user32.func("int32 __stdcall GetWindowTextW(void *hwnd, void *text, int32 max)");
   const className = user32.func("int32 __stdcall GetClassNameW(void *hwnd, void *name, int32 max)");
   const windowRect = user32.func("int32 __stdcall GetWindowRect(void *hwnd, _Out_ MK_RECT *rect)");
+  // GetWindowRect includes the invisible resize borders (about 7 px left, right and below); DWM knows the visible frame.
+  const frameBounds = dwmapi.func("int32 __stdcall DwmGetWindowAttribute(void *hwnd, uint32 attribute, _Out_ MK_RECT *value, uint32 size)");
   const monitorFromWindow = user32.func("void * __stdcall MonitorFromWindow(void *hwnd, uint32 flags)");
   const monitorInfo = user32.func("int32 __stdcall GetMonitorInfoW(void *monitor, _Inout_ MK_MONITORINFO *info)");
   const getDC = user32.func("void * __stdcall GetDC(void *hwnd)");
@@ -287,8 +322,10 @@ export function windowsProbe(koffi: KoffiModule, toDip: (rect: Rect) => Rect, to
       const tree = processes();
       const app = tree.exe.get(pid) ?? "";
       const window: ForegroundWindow = { app, title: text(windowText, hwnd), descendants: isTerminal(app) ? descendants(pid, tree) : [], fullscreen };
-      const bounds = hasRect ? toDip({ x: rect.left, y: rect.top, width: rect.right - rect.left, height: rect.bottom - rect.top }) : null;
-      return { window, pid, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null };
+      const visible = {} as Win32Rect;
+      const frame = hasRect && !desktop && frameBounds(hwnd, DWMWA_EXTENDED_FRAME_BOUNDS, visible, koffi.sizeof(RECT)) === 0 ? visible : rect;
+      const bounds = hasRect ? toDip({ x: frame.left, y: frame.top, width: frame.right - frame.left, height: frame.bottom - frame.top }) : null;
+      return { window, pid, anchor: bounds ? { x: bounds.x + bounds.width / 2, y: bounds.y + Math.min(bounds.height / 2, 40) } : null, bounds };
     },
     async luminance(points) {
       const dc = getDC(null);

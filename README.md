@@ -65,7 +65,7 @@ pnpm --filter meterkat-desktop dist:linux   # AppImage in desktop/release (Windo
 | `shared/` | Snapshot model and protocol v2 crypto (Web Crypto; also used by the relay and the app's test vectors) |
 | `protocol/` | Protocol v2 reference and test vectors |
 | `scripts/` | Packaging (Node SEA), release publishing, install scripts for the Node bundle |
-| `desktop/` | Desktop app (Electron): window, tray icon, setup wizard, island at the top screen edge; reuses `src/` for collecting, relay and pairing |
+| `desktop/` | Desktop app (Electron): window, tray icon, setup wizard, island at the top screen edge or pinned to the AI window; reuses `src/` for collecting, relay and pairing |
 | `tests/` | `node:test` suites; CI runs them on Ubuntu and Windows |
 
 Releases: [docs/releasing.md](docs/releasing.md).
