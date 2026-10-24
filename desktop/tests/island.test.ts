@@ -183,10 +183,17 @@ test("the island runs on Windows and X11, not on Wayland", () => {
   assert.ok(luminance(255, 255, 255) > 0.99 && luminance(0, 0, 0) === 0);
 });
 
-test("an open tray or context menu is recognised from a hidden foreground window or a visible popup menu", () => {
-  assert.equal(menuOpen(true, false), false);
-  assert.equal(menuOpen(false, false), true); // tray apps focus a hidden helper window while their menu is up
-  assert.equal(menuOpen(true, true), true);
+test("an open tray or context menu is recognised from the foreground window or a visible popup menu", () => {
+  // Styles measured on Windows 11: a Windows Terminal window, and an Electron 44 tray menu holding the focus.
+  const terminal = { visible: true, style: 0x14cf0000, exStyle: 0x200100 };
+  const electronMenu = { visible: true, style: 0x96000000, exStyle: 0x200088 };
+  assert.equal(menuOpen(terminal, false), false);
+  assert.equal(menuOpen(electronMenu, false), true);
+  assert.equal(menuOpen({ ...terminal, visible: false }, false), true); // Win32 tray apps focus a hidden helper window
+  assert.equal(menuOpen(terminal, true), true); // a native popup menu (#32768) is on screen
+  // An always-on-top app window keeps its caption; a topmost popup that is no tool window is no menu either.
+  assert.equal(menuOpen({ visible: true, style: 0x16cf0000, exStyle: 0x108 }, false), false);
+  assert.equal(menuOpen({ visible: true, style: 0x96000000, exStyle: 0x8 }, false), false);
 });
 
 test("the drop turns ink on light backgrounds and white on dark ones, with a dead band in between", () => {
