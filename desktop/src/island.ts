@@ -57,6 +57,8 @@ export function createIsland(options: IslandOptions) {
   let events: ReturnType<typeof windowEventStream> | null = null, eventsFailed = false;
   /** The process of the AI window the last poll saw in front; moves of other windows are ignored. */
   let aiPid: number | null = null;
+  /** The pinned AI window is being dragged or resized (Windows): the island stays retracted until it lands. */
+  let dragging = false;
   let visible = false, hidden = true, misses = 0, failures = 0;
   let tone: IslandTone = "ink";
   let queue: IslandEvent[] = [];
@@ -125,12 +127,12 @@ export function createIsland(options: IslandOptions) {
     return win;
   }
 
-  function place(at: IslandEdge) {
+  function place(at: IslandEdge, newDisplay: boolean) {
     if (!win) return;
     const bounds = { x: Math.round(at.cx - ISLAND_WINDOW.width / 2), y: at.y, ...ISLAND_WINDOW };
     win.setBounds(bounds);
     // Moving to a display with another scale factor applies the old factor first (Windows).
-    if (process.platform === "win32") win.setBounds(bounds);
+    if (process.platform === "win32" && newDisplay) win.setBounds(bounds);
   }
 
   /** Puts the island on `frame`'s top edge (pinned) or on the display nearest `near`; true when it had to move. */
@@ -140,7 +142,8 @@ export function createIsland(options: IslandOptions) {
     const target = point ? screen.getDisplayNearestPoint(point) : screen.getPrimaryDisplay();
     const next = islandEdge(anchor, target.bounds, pinned, ISLAND_WINDOW.width / 2);
     const moved = !edge || next.cx !== edge.cx || next.y !== edge.y;
-    if (!display || target.id !== display.id || hidden || moved) { display = target; edge = next; ensureWindow(); place(next); }
+    const newDisplay = !display || target.id !== display.id;
+    if (newDisplay || hidden || moved) { display = target; edge = next; ensureWindow(); place(next, newDisplay); }
     return moved && !!pinned;
   }
 
@@ -148,16 +151,24 @@ export function createIsland(options: IslandOptions) {
   function syncEvents() {
     const want = !reason && !options.demo && !eventsFailed && options.enabled() && options.anchor() === "window";
     if (want && !events) events = windowEventStream(() => new Worker(options.eventsWorker), onWindowEvent, failure => {
-      events = null; eventsFailed = true;
+      events = null; eventsFailed = true; dragging = false;
       console.warn(`Meterkat island: window events unavailable, following the window by polling (${failure})`);
     });
-    if (!want && events) { events.close(); events = null; }
+    if (!want && events) { events.close(); events = null; dragging = false; }
   }
   function onWindowEvent(event: WindowEvent) {
     if (stopped) return;
     // Another window in front: classify it now instead of within a second.
-    if (event.type === "foreground") { if (polling) again = true; else schedule(0); return; }
-    if (event.pid !== aiPid || hidden || expanded || options.anchor() !== "window") return;
+    if (event.type === "foreground") { dragging = false; if (polling) again = true; else schedule(0); return; }
+    if (event.type === "drag") {
+      if (event.pid !== aiPid || options.anchor() !== "window") return;
+      dragging = event.active;
+      // Following every frame of a drag made the drag stutter: the drop retracts and comes back where the window lands.
+      if (dragging && visible) { visible = false; current = null; release(); invisibleSince = Date.now(); send(); }
+      if (!dragging) { if (polling) again = true; else schedule(0); }
+      return;
+    }
+    if (event.pid !== aiPid || hidden || expanded || dragging || options.anchor() !== "window") return;
     position(dipRect(event.bounds), null);
   }
 
@@ -242,17 +253,17 @@ export function createIsland(options: IslandOptions) {
     if (reading?.window.fullscreen && reading.pid !== process.pid) { hideWindow(); return; }
     const ai = !!reading && reading.pid !== process.pid && isAiWindow(reading.window);
     misses = ai ? 0 : misses + 1;
-    const nextVisible = ai || (visible && misses < HIDE_AFTER);
+    const nextVisible = !dragging && (ai || (visible && misses < HIDE_AFTER));
 
     aiPid = ai && reading ? reading.pid : null;
     moving = false;
-    if (ai && reading && !expanded) {
+    if (ai && reading && !expanded && !dragging) {
       const shown = !!edge && !hidden;
       // A pinned island that had to move is probably following a drag; without window events, look again soon.
       moving = position(reading.bounds, reading.anchor) && shown && !events;
     }
     if (nextVisible && hidden && win) { win.showInactive(); hidden = false; }
-    if (!hidden && win && process.platform === "win32") win.setAlwaysOnTop(true, "screen-saver"); // others may have risen above
+    if (!hidden && win && !dragging && process.platform === "win32") win.setAlwaysOnTop(true, "screen-saver"); // others may have risen above
     const changed = nextVisible !== visible;
     visible = nextVisible;
     if (changed && !visible) release();
