@@ -1,7 +1,7 @@
 // The window: setup wizard until the companion is registered, then Overview, Phones and Settings.
 // All data comes through window.meterkat (preload.ts); the page has no Node or network access of its own.
 import { ago, bars, percent, providerColor, providerGroups, providerMark, providerName, resetText, shownPercent } from "../format.js";
-import type { AppState, BarMode, Device, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
+import type { AppState, BarMode, Device, IslandAnchor, MeterkatApi, Pairing, ProviderCheck, View } from "../ipc.js";
 
 declare global { interface Window { meterkat: MeterkatApi } }
 const api = window.meterkat;
@@ -109,6 +109,7 @@ function toggle(action: string, checked: boolean, label: string) {
 }
 
 function settingsView() {
+  const anchor = (value: IslandAnchor, label: string) => `<button class="${state.island.anchor === value ? "on" : ""}" data-action="island-anchor" data-anchor="${value}" role="radio" aria-checked="${state.island.anchor === value}">${label}</button>`;
   const { autostart, update, registration } = state;
   const running = state.sync.mode === "service";
   const serviceText = autostart.service ? `The CLI companion is also set up to start at sign-in${running ? " and is syncing right now" : ""}.` : "The CLI companion is syncing in the background right now.";
@@ -126,7 +127,8 @@ function settingsView() {
   const automatic = update.install === "auto" ? `<div class="card row"><div><div>Install updates automatically</div><div class="muted small">Signed releases only. Meterkat restarts by itself while it is in the tray.</div></div>${toggle("automatic-updates", update.automatic, "Install updates automatically")}</div>` : "";
   const island = state.island.unsupported
     ? `<div class="card"><div>Island</div><div class="muted small">${esc(state.island.unsupported)}</div></div>`
-    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets; click it to see every provider.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`;
+    : `<div class="card row"><div><div>Show the island</div><div class="muted small">A small Meterkat drop at the top edge of the screen while Claude, Codex or T3 Code is in front. It opens when usage jumps and before a quota resets; click it to see every provider.</div></div>${toggle("island", state.island.enabled, "Show the island")}</div>`
+      + (state.island.enabled ? `<div class="card row"><div><div>Island sits at</div><div class="muted small">On the AI window, it moves with the window.</div></div><div class="segmented" role="radiogroup" aria-label="Island sits at">${anchor("screen", "Top of screen")}${anchor("window", "AI window")}</div></div>` : "");
   const mode = (value: BarMode, label: string) => `<button class="${state.bars === value ? "on" : ""}" data-action="bar-mode" data-mode="${value}" role="radio" aria-checked="${state.bars === value}">${label}</button>`;
   const barMode = `<div class="card row"><div><div>Coloured bars show</div><div class="muted small">In this window, the island and the tray.</div></div><div class="segmented" role="radiogroup" aria-label="Coloured bars show">${mode("used", "Used")}${mode("remaining", "Remaining")}</div></div>`;
   return `<h2>Startup</h2>${service}${start}
@@ -227,6 +229,7 @@ document.addEventListener("click", event => {
       case "check-update": updateBusy = true; render(); try { await api.checkUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
       case "install-update": updateBusy = true; render(); try { await api.installUpdate(); } catch { /* shown from state */ } updateBusy = false; render(); break;
       case "download": await api.open("releases"); break;
+      case "island-anchor": try { await api.setIslandAnchor(target.dataset.anchor === "window" ? "window" : "screen"); } catch (error) { settingsError = message(error); render(); } break;
       case "bar-mode": try { await api.setBarMode(target.dataset.mode === "remaining" ? "remaining" : "used"); } catch (error) { settingsError = message(error); render(); } break;
       case "quit": api.quit(); break;
       case "to-relay": step = "relay"; render(); break;

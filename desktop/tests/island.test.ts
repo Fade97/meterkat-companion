@@ -5,9 +5,9 @@ import { join } from "node:path";
 import { test } from "node:test";
 import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
-import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseWindowProps, threadedProbe, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
+import { linuxDescendants, luminance, nextTone, parseActiveWindow, parseExtents, parseWindowInfo, parseWindowProps, threadedProbe, visibleFrame, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
-import { hits, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, samplePoints } from "../src/island-shape.js";
+import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, samplePoints } from "../src/island-shape.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60_000;
@@ -181,10 +181,43 @@ test("the drop turns ink on light backgrounds and white on dark ones, with a dea
 });
 
 test("brightness is sampled beside the widest shape, never under it", () => {
-  const points = samplePoints({ bounds: { x: 1920, y: 0, width: 1920 } });
+  const points = samplePoints({ cx: 1920 + 960, y: 0 });
   const half = Math.max(...Object.values(ISLAND_SIZES).map(size => islandFootprint({ cx: 0, ...size }))) / 2;
   assert.equal(points.length, 8);
   assert.ok(points.every(p => Math.abs(p.x - (1920 + 960)) > half && p.y >= 0 && p.y < 20));
+  // Pinned to a window, the samples follow the drop onto that window's title bar.
+  assert.ok(samplePoints({ cx: 700, y: 300 }).every(p => Math.abs(p.x - 700) > half && p.y >= 300 && p.y < 320));
+});
+
+test("the island hangs from the screen's top edge, or from the AI window's when pinned to it", () => {
+  const display = { x: 1920, y: 0, width: 1920, height: 1080 }, window = { x: 2100, y: 200, width: 800, height: 600 };
+  assert.deepEqual(islandEdge("screen", display, window, 220), { cx: 2880, y: 0 });
+  assert.deepEqual(islandEdge("window", display, window, 220), { cx: 2500, y: 200 });
+  // Without the window's frame (or with an empty one) it stays at the top of the screen.
+  assert.deepEqual(islandEdge("window", display, null, 220), { cx: 2880, y: 0 });
+  assert.deepEqual(islandEdge("window", display, { ...window, width: 0 }, 220), { cx: 2880, y: 0 });
+  // A window hanging off the left or the top keeps the island (and its open panel) on the display.
+  assert.deepEqual(islandEdge("window", display, { x: 1700, y: -30, width: 400, height: 600 }, 220), { cx: 2140, y: 0 });
+  // A window dragged almost off the bottom leaves the drop on screen.
+  assert.deepEqual(islandEdge("window", display, { x: 2100, y: 1075, width: 800, height: 600 }, 220), { cx: 2500, y: 960 });
+  // A maximized window below a taskbar at the top: the drop sits under the taskbar.
+  assert.deepEqual(islandEdge("window", display, { x: 1920, y: 48, width: 1920, height: 1032 }, 220), { cx: 2880, y: 48 });
+});
+
+test("an X11 window's visible frame comes from xwininfo and the frame extents", () => {
+  const info = ["xwininfo: Window id: 0x3a00004 \"Claude\"", "", "  Absolute upper-left X:  1290", "  Absolute upper-left Y:  237", "  Relative upper-left X:  0",
+    "  Relative upper-left Y:  37", "  Width: 1200", "  Height: 800", "  Depth: 24", "  Border width: 0"].join("\n");
+  const client = parseWindowInfo(info);
+  assert.deepEqual(client, { x: 1290, y: 237, width: 1200, height: 800 });
+  assert.equal(parseWindowInfo("X Error of failed request:  BadWindow"), null);
+  const props = ['WM_CLASS = "claude", "Claude"', "_NET_FRAME_EXTENTS = 0, 0, 37, 0", "_GTK_FRAME_EXTENTS:  not found."].join("\n");
+  const frame = parseExtents(props, "_NET_FRAME_EXTENTS"), shadow = parseExtents(props, "_GTK_FRAME_EXTENTS");
+  assert.deepEqual(frame, { left: 0, right: 0, top: 37, bottom: 0 });
+  assert.equal(shadow, null);
+  // Server-side title bar: the frame starts above the client area.
+  assert.deepEqual(visibleFrame(client!, frame, shadow), { x: 1290, y: 200, width: 1200, height: 837 });
+  // Client-side decorations: the window draws a 26 px shadow (23 above) into its own area; the frame starts inside it.
+  assert.deepEqual(visibleFrame({ x: 100, y: 100, width: 852, height: 649 }, null, { left: 26, right: 26, top: 23, bottom: 29 }), { x: 126, y: 123, width: 800, height: 597 });
 });
 
 /** A worker that answers like foreground-worker.ts, in screen pixels at a scale of 2. */
@@ -200,14 +233,17 @@ function fakeWorker(answer: (request: ProbeRequest) => unknown) {
   return worker;
 }
 const half = (p: { x: number; y: number }) => ({ x: p.x / 2, y: p.y / 2 }), double = (p: { x: number; y: number }) => ({ x: p.x * 2, y: p.y * 2 });
+const halfRect = (r: { x: number; y: number; width: number; height: number }) => ({ x: r.x / 2, y: r.y / 2, width: r.width / 2, height: r.height / 2 });
 const noFallback = (): ForegroundProbe => { throw new Error("fallback used"); };
 
 test("the threaded probe converts between DIP and the worker's screen pixels", async () => {
   const worker = fakeWorker(request => request.op === "read"
-    ? { window: { app: "claude.exe", title: "Claude", descendants: [], fullscreen: false }, anchor: { x: 1920, y: 80 }, pid: 7 }
+    ? { window: { app: "claude.exe", title: "Claude", descendants: [], fullscreen: false }, anchor: { x: 1920, y: 80 }, bounds: { x: 400, y: 40, width: 3000, height: 2000 }, pid: 7 }
     : request.points.map(p => p.x / 10_000));
-  const probe = threadedProbe(() => worker, half, double, noFallback);
-  assert.deepEqual((await probe.read())?.anchor, { x: 960, y: 40 });
+  const probe = threadedProbe(() => worker, half, halfRect, double, noFallback);
+  const reading = await probe.read();
+  assert.deepEqual(reading?.anchor, { x: 960, y: 40 });
+  assert.deepEqual(reading?.bounds, { x: 200, y: 20, width: 1500, height: 1000 });
   assert.deepEqual(await probe.luminance([{ x: 1000, y: 3 }], 1), [0.2]);
   assert.deepEqual(worker.requests[1], { op: "luminance", points: [{ x: 2000, y: 6 }], id: 2 });
 });
@@ -216,7 +252,7 @@ test("the threaded probe falls back to the main thread when the worker dies", as
   const worker = fakeWorker(() => null);
   worker.postMessage = function (request) { this.requests.push(request); };
   const local: ForegroundProbe = { read: async () => null, luminance: async points => points.map(() => 0.5) };
-  const probe = threadedProbe(() => worker, half, double, () => local);
+  const probe = threadedProbe(() => worker, half, halfRect, double, () => local);
   const pending = probe.read();
   worker.emit("error", new Error("koffi missing"));
   await assert.rejects(pending, /koffi missing/);

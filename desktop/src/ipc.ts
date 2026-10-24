@@ -4,9 +4,9 @@ import type { Snapshot } from "../../shared/snapshot.js";
 import type { ProviderCheck } from "../../src/setup.js";
 import type { BarMode } from "./format.js";
 import type { IslandEvent } from "./island-events.js";
-import type { HitArea } from "./island-shape.js";
+import type { HitArea, IslandAnchor } from "./island-shape.js";
 
-export type { BarMode, HitArea, ProviderCheck, Snapshot };
+export type { BarMode, HitArea, IslandAnchor, ProviderCheck, Snapshot };
 /** "service": a CLI companion (systemd unit or Windows background process) already syncs; the app only shows its data. */
 export type SyncMode = "app" | "service";
 export type AppState = {
@@ -22,8 +22,11 @@ export type AppState = {
    * ready: version downloaded and verified, waiting for a restart.
    */
   update: { latest: string | null; newer: boolean; checkedAt: number | null; error: string | null; install: "auto" | "manual"; automatic: boolean; downloading: boolean; ready: string | null };
-  /** The drop at the top screen edge; `unsupported` says why it cannot run on this system. */
-  island: { enabled: boolean; unsupported: string | null };
+  /**
+   * The drop at the top screen edge, or pinned to the top edge of the AI window (anchor "window");
+   * `unsupported` says why it cannot run on this system.
+   */
+  island: { enabled: boolean; anchor: IslandAnchor; unsupported: string | null };
   /** Whether bars and percentages show the used share or what is left (window, island and tray). */
   bars: BarMode;
 };
@@ -48,6 +51,7 @@ export interface MeterkatApi {
   revokeAll(): Promise<boolean>;
   setAutostart(enabled: boolean): Promise<void>;
   setIsland(enabled: boolean): Promise<void>;
+  setIslandAnchor(anchor: IslandAnchor): Promise<void>;
   setBarMode(mode: BarMode): Promise<void>;
   /** Removes the CLI autostart, stops its process and lets the app sync instead. */
   takeOver(): Promise<void>;
@@ -65,7 +69,7 @@ export const CHANNEL = {
   detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync",
   startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
-  autostart: "meterkat:autostart", island: "meterkat:island-enabled", barMode: "meterkat:bar-mode", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
+  autostart: "meterkat:autostart", island: "meterkat:island-enabled", islandAnchor: "meterkat:island-anchor", barMode: "meterkat:bar-mode", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
   installUpdate: "meterkat:install-update", automaticUpdates: "meterkat:automatic-updates",
   open: "meterkat:open", hide: "meterkat:hide", quit: "meterkat:quit",
 } as const;

@@ -1,4 +1,5 @@
-// The island: a click-through, always-on-top window at the top edge of the display that shows an AI tool. The page
+// The island: a click-through, always-on-top window at the top edge of the display (or of the AI window, when pinned
+// to it) that shows while an AI tool is in front. The page
 // draws the drop and its animations; this side decides when it is visible, which colour it takes and what it announces.
 // The window takes the pointer only while it is on the drop (or the open panel); a click opens the panel with every
 // provider, and it closes when clicked again or once the pointer has left it.
@@ -6,10 +7,10 @@ import { BrowserWindow, desktopCapturer, ipcMain, screen, type Display, type Ipc
 import { Worker } from "node:worker_threads";
 import type { Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow } from "./ai-apps.js";
-import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryButton, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type ScreenCapture } from "./foreground.js";
+import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryButton, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type Rect, type ScreenCapture } from "./foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
 import type { BarMode } from "./format.js";
-import { hits, missedClicks, PANEL_MAX_HEIGHT, samplePoints, type HitArea } from "./island-shape.js";
+import { hits, islandEdge, missedClicks, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
 import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
 /** Tall enough for the open panel; everything outside the drop lets the pointer through. */
@@ -19,6 +20,8 @@ const POINTER_MS = 25;
 /** The panel closes once the pointer has been off it this long. */
 const LEAVE_MS = 900;
 const POLL_MS = 1000;
+/** Poll interval while the AI window the island is pinned to is moving, so the drop keeps up with it. */
+const FOLLOW_MS = 150;
 const TONE_MS = 1500;
 const EVENTS_MS = 5000;
 /** How long an announcement stays open; the page needs about 0.9 s on top to open and close the pill. */
@@ -31,6 +34,8 @@ export type IslandOptions = {
   snapshot: () => Snapshot | null;
   enabled: () => boolean;
   mode: () => BarMode;
+  /** Top of the screen, or the top edge of the AI window in front. */
+  anchor: () => IslandAnchor;
   preload: string;
   page: string;
   /** foreground-worker.cjs: the Win32 probe runs there so it cannot stall the pointer tracking. */
@@ -44,7 +49,7 @@ export function createIsland(options: IslandOptions) {
   const tracker = new IslandTracker();
   let probe: ForegroundProbe | null = null;
   let win: BrowserWindow | null = null;
-  let display: Display | null = null;
+  let display: Display | null = null, edge: IslandEdge | null = null, moving = false;
   let visible = false, hidden = true, misses = 0, failures = 0;
   let tone: IslandTone = "ink";
   let queue: IslandEvent[] = [];
@@ -57,9 +62,14 @@ export function createIsland(options: IslandOptions) {
   function createProbe(): ForegroundProbe {
     if (process.platform === "win32") {
       const local = () => windowsProbe(require("koffi") as KoffiModule, rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point));
-      return threadedProbe(() => new Worker(options.probeWorker), point => screen.screenToDipPoint(point), point => screen.dipToScreenPoint(point), local);
+      return threadedProbe(() => new Worker(options.probeWorker), point => screen.screenToDipPoint(point), rect => screen.screenToDipRect(null, rect), point => screen.dipToScreenPoint(point), local);
     }
-    return linuxProbe(capture, cursor);
+    // X11 reports physical pixels; Electron converts points but not rectangles there.
+    const toDip = (rect: Rect) => {
+      const from = screen.screenToDipPoint({ x: rect.x, y: rect.y }), to = screen.screenToDipPoint({ x: rect.x + rect.width, y: rect.y + rect.height });
+      return { x: from.x, y: from.y, width: to.x - from.x, height: to.y - from.y };
+    };
+    return linuxProbe(capture, cursor, () => options.anchor() === "window", toDip);
   }
 
   /** The pointer in DIP and whether the primary button is held. Windows reports the point live; X11 is asked directly (see x11Pointer). */
@@ -113,9 +123,9 @@ export function createIsland(options: IslandOptions) {
     return win;
   }
 
-  function place(target: Display) {
+  function place(at: IslandEdge) {
     if (!win) return;
-    const bounds = { x: Math.round(target.bounds.x + (target.bounds.width - ISLAND_WINDOW.width) / 2), y: target.bounds.y, ...ISLAND_WINDOW };
+    const bounds = { x: Math.round(at.cx - ISLAND_WINDOW.width / 2), y: at.y, ...ISLAND_WINDOW };
     win.setBounds(bounds);
     // Moving to a display with another scale factor applies the old factor first (Windows).
     if (process.platform === "win32") win.setBounds(bounds);
@@ -171,7 +181,7 @@ export function createIsland(options: IslandOptions) {
   const onToggle = (event: IpcMainEvent) => { if (fromPage(event) && hover) { insideAt = Date.now(); setExpanded(!expanded); } };
 
   async function read(): Promise<ForegroundReading | null> {
-    if (options.demo) return { window: { app: "claude", title: "Claude", descendants: [], fullscreen: false }, anchor: cursor(), pid: 0 };
+    if (options.demo) return { window: { app: "claude", title: "Claude", descendants: [], fullscreen: false }, anchor: cursor(), bounds: null, pid: 0 };
     probe ??= createProbe();
     return probe.read();
   }
@@ -203,9 +213,16 @@ export function createIsland(options: IslandOptions) {
     misses = ai ? 0 : misses + 1;
     const nextVisible = ai || (visible && misses < HIDE_AFTER);
 
+    moving = false;
     if (ai && reading && !expanded) {
-      const target = reading.anchor ? screen.getDisplayNearestPoint(reading.anchor) : screen.getPrimaryDisplay();
-      if (!display || target.id !== display.id || hidden) { display = target; ensureWindow(); place(target); }
+      const anchor = options.anchor(), frame = anchor === "window" ? reading.bounds : null;
+      const near = frame ? { x: frame.x + frame.width / 2, y: frame.y } : reading.anchor;
+      const target = near ? screen.getDisplayNearestPoint(near) : screen.getPrimaryDisplay();
+      const next = islandEdge(anchor, target.bounds, frame, ISLAND_WINDOW.width / 2);
+      const moved = !edge || next.cx !== edge.cx || next.y !== edge.y;
+      // A pinned island that had to move is probably following a drag; look again soon.
+      moving = moved && !!frame && !!edge && !hidden;
+      if (!display || target.id !== display.id || hidden || moved) { display = target; edge = next; ensureWindow(); place(next); }
     }
     if (nextVisible && hidden && win) { win.showInactive(); hidden = false; }
     if (!hidden && win && process.platform === "win32") win.setAlwaysOnTop(true, "screen-saver"); // others may have risen above
@@ -218,10 +235,10 @@ export function createIsland(options: IslandOptions) {
     // Once the drop has retracted, the window itself goes away until an AI tool is in front again.
     if (!visible && !hidden && win && now - invisibleSince > 3000) { win.hide(); hidden = true; }
 
-    if (visible && display && !options.demo && now >= toneAt) {
+    if (visible && display && edge && !options.demo && now >= toneAt) {
       toneAt = now + TONE_MS;
       try {
-        const next = nextTone(tone, await probe!.luminance(samplePoints(display), display.id));
+        const next = nextTone(tone, await probe!.luminance(samplePoints(edge), display.id));
         if (next !== tone) { tone = next; send(); }
       } catch { /* keep the current tone */ }
     }
@@ -248,7 +265,7 @@ export function createIsland(options: IslandOptions) {
   }
   function loop() {
     timer = null; polling = true;
-    void poll().finally(() => { polling = false; if (!stopped) schedule(POLL_MS); });
+    void poll().finally(() => { polling = false; if (!stopped) schedule(moving ? FOLLOW_MS : POLL_MS); });
   }
 
   return {
