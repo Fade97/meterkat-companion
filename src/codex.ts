@@ -3,6 +3,7 @@ import { existsSync } from "node:fs";
 import { isSea } from "node:sea";
 import { dirname, join } from "node:path";
 import { fromCodexLimits, type ProviderUsage } from "../shared/snapshot.js";
+import { accountFingerprint } from "./account.js";
 import { childEnv } from "./runtime.js";
 import { findExecutable } from "./setup.js";
 
@@ -49,9 +50,11 @@ export function readCodexUsage(timeoutMs = 20_000): Promise<ProviderUsage> {
     const bin = codexCommand();
     const child = spawn(bin.command, [...bin.args, "app-server", "--listen", "stdio://"], { env: childEnv(bin), stdio: ["pipe", "pipe", "ignore"], windowsHide: true });
     let settled = false; let buffer = "";
+    /** Quota already read; only the account fingerprint is still pending, and losing it never loses the quota. */
+    let usage: ProviderUsage | undefined;
     const finish = (error?: Error, result?: ProviderUsage) => {
       if (settled) return; settled = true; clearTimeout(timer); child.stdin.end(); child.kill();
-      error ? reject(error) : resolve(result!);
+      if (!result && usage) resolve(usage); else error ? reject(error) : resolve(result!);
     };
     const timer = setTimeout(() => finish(new Error("Codex quota request timed out")), timeoutMs);
     const send = (value: unknown) => child.stdin.write(JSON.stringify(value) + "\n");
@@ -71,7 +74,14 @@ export function readCodexUsage(timeoutMs = 20_000): Promise<ProviderUsage> {
           }
           if (message.id === 2) {
             if (message.error) return finish(new Error("Codex quota unavailable; check native sign-in"));
-            return finish(undefined, fromCodexLimits(message.result));
+            usage = fromCodexLimits(message.result);
+            if (usage.state !== "ok") return finish(undefined, usage);
+            send({ id: 3, method: "account/read", params: {} });
+          }
+          if (message.id === 3) {
+            // ChatGPT account (workspace) ID + e-mail: the subscription this quota belongs to (#68).
+            const account = message.error ? undefined : accountFingerprint("codex", message.result?.workspaceRouting?.chatgptAccountId, message.result?.account?.email);
+            return finish(undefined, account ? { ...usage!, account } : usage);
           }
         } catch { /* Non-protocol startup output is ignored; never forwarded. */ }
       }

@@ -2,6 +2,7 @@ import { readCodexUsage } from "./codex.js";
 import { readClaudeUsage } from "./claude.js";
 import { readAntigravityUsage } from "./antigravity.js";
 import { readState, writeState } from "./state.js";
+import { companionName } from "./account.js";
 import { parseSnapshot, unavailable, type ProviderUsage, type Snapshot } from "../shared/snapshot.js";
 
 /** An optional provider is only reported once it has delivered real quota data, and only while its CLI is usable. */
@@ -37,6 +38,7 @@ export async function collect(readers = providerReaders): Promise<Snapshot> {
     return unavailable(id, old, authRequired);
   };
   const providers = (await Promise.all(readers.map(read))).filter(p => p !== undefined);
-  const snapshot = parseSnapshot({ schemaVersion: 1, sequence: (previous?.sequence ?? 0) + 1, generatedAt: Math.max(Date.now(), (previous?.generatedAt ?? 0) + 1), providers });
+  const name = companionName();
+  const snapshot = parseSnapshot({ schemaVersion: 1, sequence: (previous?.sequence ?? 0) + 1, generatedAt: Math.max(Date.now(), (previous?.generatedAt ?? 0) + 1), ...(name ? { name } : {}), providers });
   writeState("snapshot.json", snapshot); return snapshot;
 }

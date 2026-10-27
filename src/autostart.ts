@@ -14,7 +14,7 @@ export const RUN_VALUE = "MeterkatCompanion";
 export const LEGACY_UNIT_NAME = "ai-usage-companion.service";
 export const LEGACY_RUN_VALUE = "AIUsageCompanion";
 // Only explicitly selected, non-secret settings are persisted; PATH is rebuilt deliberately below.
-const FORWARDED_ENV = ["AI_USAGE_STATE_DIR", "AI_USAGE_CLAUDE_BIN", "AI_USAGE_CODEX_BIN"] as const;
+const FORWARDED_ENV = ["AI_USAGE_STATE_DIR", "AI_USAGE_CLAUDE_BIN", "AI_USAGE_CODEX_BIN", "AI_USAGE_NAME"] as const;
 // Units without this first line (e.g. the operator-managed private pilot unit) are never replaced or removed.
 export const MARKER = "# Managed by Meterkat autostart. Reinstall instead of editing.";
 export const LEGACY_MARKER = "# Managed by ai-usage autostart. Reinstall instead of editing.";
