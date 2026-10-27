@@ -32,11 +32,13 @@ gh attestation verify meterkat-companion-<version>-linux-x64 -R Fade97/meterkat-
 
 | Provider | Source | Notes |
 | --- | --- | --- |
-| Claude | Unmodified `claude` CLI, local `/usage` command in headless JSON mode ([documented report](https://code.claude.com/docs/en/agent-sdk/typescript#sdkusagereport)) | Only `session` and `weekly_all` limits. No inference request. |
-| Codex | Native App Server `account/rateLimits/read` ([documented interface](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt)) | Five-hour and weekly windows. No inference request, no auth-file handling. |
+| Claude | Unmodified `claude` CLI, local `/usage` command in headless JSON mode ([documented report](https://code.claude.com/docs/en/agent-sdk/typescript#sdkusagereport)) | Only `session` and `weekly_all` limits. No inference request. Account fingerprint from local `claude auth status --json` (at most every 10 minutes). |
+| Codex | Native App Server `account/rateLimits/read` ([documented interface](https://learn.chatgpt.com/docs/app-server#6-rate-limits-chatgpt)) | Five-hour and weekly windows. No inference request, no auth-file handling. Account fingerprint from `account/read` in the same session. |
 | Antigravity | Signed-in `agy -p /usage --output-format json` (1.1.11+) | Optional, one meter per quota bucket: [docs/antigravity.md](docs/antigravity.md). |
 
-Snapshots contain only provider IDs and states, used percentages, reset times, quota bucket labels and observation times ([`shared/snapshot.ts`](shared/snapshot.ts)). Passwords, session tokens, emails, prompts and transcripts are never read into a snapshot. `meterkat inspect` reports availability only, without quota values.
+Snapshots contain only provider IDs and states, used percentages, reset times, quota bucket labels and observation times ([`shared/snapshot.ts`](shared/snapshot.ts)), plus the computer's name and a per-provider account fingerprint. Passwords, session tokens, emails, prompts and transcripts are never read into a snapshot. `meterkat inspect` reports availability only, without quota values.
+
+**Several computers, one phone.** A phone can pair with several companions. So that one subscription used on two computers appears once, Claude and Codex readings carry `account`: the first 16 bytes (base64url) of SHA-256 over `meterkat-account/v1|<provider>|<account ID>|<e-mail>`, with the organization ID (Claude) or ChatGPT account ID (Codex) as account ID. The ID and e-mail are only hashed locally and never stored or sent. Equal fingerprints mean the same subscription; the phone shows the freshest reading. Antigravity's `/usage` has no account data, so it is never merged. The snapshot's `name` labels a computer when the same provider appears more than once: `AI_USAGE_NAME`, otherwise the short host name, limited to 32 letters, digits, spaces and `_().:+/-`. Both fields live only inside the encrypted snapshot.
 
 Snapshots are encrypted with a 32-byte key generated on your machine; it reaches your phone only in the fragment of the pairing link and is never sent to the relay. The protocol is specified in [protocol/v2.md](protocol/v2.md), with the design rationale in [ADR 0001](docs/adr/0001-relay-protocol-v2.md) and test vectors in [protocol/v2-test-vectors.json](protocol/v2-test-vectors.json).
 

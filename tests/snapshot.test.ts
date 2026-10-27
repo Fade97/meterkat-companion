@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { captureClaude, fromClaudeStatusline, fromClaudeReport, fromCodexLimits, parseSnapshot, unavailable } from "../shared/snapshot.js";
+import { accountFingerprint, companionName } from "../src/account.js";
 
 const now = 1_800_000_000_000;
 const reset = now / 1000 + 3600;
@@ -61,4 +62,34 @@ test("snapshot rejects invalid or duplicate providers and impossible sample time
   assert.throws(() => parseSnapshot({ ...data, providers: [{ id: "claude", state: "ok", sampledAt: now + 1000, windows: { fiveHour: { usedPercent: 10, resetsAt: now + 10000 } } }, unavailable("codex")] }, now));
   const injected = parseSnapshot({ ...data, token: "secret", providers: data.providers.map(p => ({ ...p, secret: "hidden" })) }, now);
   assert(!JSON.stringify(injected).includes("secret"));
+});
+
+test("account fingerprints and the computer name pass the whitelist; anything else is refused (#68)", () => {
+  const account = accountFingerprint("claude", "org-1", "a@example.test")!;
+  const claude = { id: "claude", state: "ok", sampledAt: now, windows: { fiveHour: { usedPercent: 10, resetsAt: now + 3600000 } }, account };
+  const data = { schemaVersion: 1, sequence: 1, generatedAt: now, name: "Vulcan", providers: [claude] };
+  const result = parseSnapshot(data, now);
+  assert.equal(result.name, "Vulcan"); assert.equal(result.providers[0]?.account, account);
+  assert.equal(unavailable("claude", result.providers[0]).account, account, "a failed poll keeps the subscription it belongs to");
+  assert.equal(parseSnapshot({ ...data, name: undefined }, now).name, undefined);
+  assert.throws(() => parseSnapshot({ ...data, name: "bad\nname" }, now));
+  assert.throws(() => parseSnapshot({ ...data, name: "x".repeat(33) }, now));
+  assert.throws(() => parseSnapshot({ ...data, providers: [{ ...claude, account: "someone@example.test" }] }, now));
+});
+
+test("fingerprints match across computers for one account and differ for another", () => {
+  assert.equal(accountFingerprint("codex", "acc-1", " A@Example.test "), accountFingerprint("codex", "acc-1", "a@example.test"));
+  assert.notEqual(accountFingerprint("codex", "acc-1", "a@example.test"), accountFingerprint("codex", "acc-2", "a@example.test"));
+  assert.notEqual(accountFingerprint("codex", "acc-1", "a@example.test"), accountFingerprint("codex", "acc-1", "b@example.test"));
+  assert.notEqual(accountFingerprint("codex", "acc-1", "a@example.test"), accountFingerprint("claude", "acc-1", "a@example.test"));
+  assert.equal(accountFingerprint("codex", undefined, "a@example.test"), undefined);
+  assert.equal(accountFingerprint("codex", "", "a@example.test"), undefined);
+});
+
+test("the computer name comes from AI_USAGE_NAME or the short host name, in label characters", () => {
+  assert.equal(companionName({}, "vulcan.langur-in.ts.net"), "vulcan");
+  assert.equal(companionName({ AI_USAGE_NAME: " Work laptop " }, "host"), "Work laptop");
+  assert.equal(companionName({ AI_USAGE_NAME: "Büro<PC>\n" }, "host"), "BüroPC");
+  assert.equal(companionName({}, "")?.length ?? 0, 0);
+  assert.equal(companionName({ AI_USAGE_NAME: "y".repeat(40) }, "host")?.length, 32);
 });

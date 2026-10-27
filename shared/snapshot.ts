@@ -6,8 +6,13 @@ export type ProviderUsage = {
   sampledAt: number | null;
   windows: { fiveHour?: WindowUsage; weekly?: WindowUsage };
   meters?: MeterUsage[];
+  /** Opaque subscription fingerprint (#68): equal on every computer signed in to the same account. */
+  account?: string;
 };
-export type Snapshot = { schemaVersion: 1; sequence: number; generatedAt: number; providers: ProviderUsage[] };
+/** [name] labels this computer on a phone paired with several companions (#68). */
+export type Snapshot = { schemaVersion: 1; sequence: number; generatedAt: number; name?: string; providers: ProviderUsage[] };
+const labelPattern = /^[\p{L}\p{N} _().:+/-]{1,32}$/u;
+const accountPattern = /^[A-Za-z0-9_-]{22}$/;
 const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
 const timestamp = (v: unknown, now: number): v is number => typeof v === "number" && Number.isSafeInteger(v) && v > 0 && v <= now + 300_000;
 const windowValue = (v: unknown): v is WindowUsage => object(v) && typeof v.usedPercent === "number" && Number.isFinite(v.usedPercent) && v.usedPercent >= 0 && v.usedPercent <= 100 && typeof v.resetsAt === "number" && Number.isSafeInteger(v.resetsAt) && v.resetsAt > 0;
@@ -32,7 +37,7 @@ export function parseSnapshot(value: unknown, now = Date.now()): Snapshot {
       if (!Array.isArray(p.meters) || p.meters.length < 1 || p.meters.length > 6) throw new Error("Invalid meters");
       const meterIds = new Set<string>();
       meters = p.meters.map((m: unknown) => {
-        if (!object(m) || typeof m.id !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(m.id) || meterIds.has(m.id) || typeof m.label !== "string" || !/^[\p{L}\p{N} _().:+/-]{1,32}$/u.test(m.label) || p.sampledAt === null) throw new Error("Invalid meter");
+        if (!object(m) || typeof m.id !== "string" || !/^[a-z][a-z0-9_-]{0,31}$/.test(m.id) || meterIds.has(m.id) || typeof m.label !== "string" || !labelPattern.test(m.label) || p.sampledAt === null) throw new Error("Invalid meter");
         const quota = { usedPercent: m.usedPercent, resetsAt: m.resetsAt };
         if (!windowValue(quota)) throw new Error("Invalid meter quota");
         meterIds.add(m.id);
@@ -40,13 +45,15 @@ export function parseSnapshot(value: unknown, now = Date.now()): Snapshot {
       });
     }
     if (p.state === "ok" && (!p.sampledAt || (Object.keys(windows).length === 0 && !meters?.length))) throw new Error("Missing quota data");
-    return { id: p.id, state: p.state as ProviderUsage["state"], sampledAt: p.sampledAt as number | null, windows, ...(meters ? { meters } : {}) };
+    if (p.account !== undefined && (typeof p.account !== "string" || !accountPattern.test(p.account))) throw new Error("Invalid account");
+    return { id: p.id, state: p.state as ProviderUsage["state"], sampledAt: p.sampledAt as number | null, windows, ...(meters ? { meters } : {}), ...(p.account !== undefined ? { account: p.account } : {}) };
   });
-  return { schemaVersion: 1, sequence: Number(value.sequence), generatedAt: value.generatedAt, providers };
+  if (value.name !== undefined && (typeof value.name !== "string" || !labelPattern.test(value.name))) throw new Error("Invalid name");
+  return { schemaVersion: 1, sequence: Number(value.sequence), generatedAt: value.generatedAt, ...(value.name !== undefined ? { name: value.name } : {}), providers };
 }
 
 export function unavailable(id: ProviderUsage["id"], previous?: ProviderUsage, authRequired = false): ProviderUsage {
-  return { id, state: authRequired ? "auth_required" : "unavailable", sampledAt: previous?.sampledAt ?? null, windows: previous?.windows ?? {}, ...(previous?.meters ? { meters: previous.meters } : {}) };
+  return { id, state: authRequired ? "auth_required" : "unavailable", sampledAt: previous?.sampledAt ?? null, windows: previous?.windows ?? {}, ...(previous?.meters ? { meters: previous.meters } : {}), ...(previous?.account ? { account: previous.account } : {}) };
 }
 
 export function fromClaudeStatusline(input: any, sampledAt = Date.now()): ProviderUsage {

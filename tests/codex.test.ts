@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { codexCommand, nativeCodexBeside } from "../src/codex.js";
+import { codexCommand, nativeCodexBeside, readCodexUsage } from "../src/codex.js";
+import { accountFingerprint } from "../src/account.js";
 
 // An npm global install on Windows: codex.cmd shim plus node_modules/@openai/codex/bin/codex.js, no codex.exe.
 function npmGlobal(t: { after: (fn: () => void) => void }, withNode: boolean) {
@@ -57,4 +58,44 @@ test("native lookup ignores other architectures and falls back to codex.js", t =
   mkdirSync(join(native, ".."), { recursive: true }); writeFileSync(native, "");
   assert.equal(nativeCodexBeside(script, "ia32"), undefined);
   assert.deepEqual(codexCommand(env, "win32", true, "arm64"), { command: node, args: [script] });
+});
+
+// A fake App Server: answers initialize, the quota read and (when [account] is set) account/read.
+function fakeAppServer(t: { after: (fn: () => void) => void }, account: unknown) {
+  const directory = mkdtempSync(join(tmpdir(), "codex-stub-")); t.after(() => rmSync(directory, { recursive: true, force: true }));
+  const bin = join(directory, "codex");
+  const limits = { rateLimits: { primary: { usedPercent: 12, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 3600 } } };
+  writeFileSync(bin, `#!${process.execPath}
+const answers = { 1: { result: {} }, 2: { result: ${JSON.stringify(limits)} }, 3: ${JSON.stringify(account)} };
+let buffer = "";
+process.stdin.on("data", chunk => {
+  buffer += chunk; let i;
+  while ((i = buffer.indexOf("\\n")) >= 0) {
+    const message = JSON.parse(buffer.slice(0, i)); buffer = buffer.slice(i + 1);
+    const answer = answers[message.id];
+    if (answer === null) process.exit(0);
+    if (answer) console.log(JSON.stringify({ id: message.id, ...answer }));
+  }
+});
+`);
+  chmodSync(bin, 0o755);
+  const saved = process.env.AI_USAGE_CODEX_BIN; process.env.AI_USAGE_CODEX_BIN = bin;
+  t.after(() => { if (saved === undefined) delete process.env.AI_USAGE_CODEX_BIN; else process.env.AI_USAGE_CODEX_BIN = saved; });
+}
+const unixOnly = process.platform === "win32" && "stub relies on a shebang";
+
+test("Codex quota carries the ChatGPT account fingerprint (#68)", { skip: unixOnly }, async t => {
+  fakeAppServer(t, { result: { account: { type: "chatgpt", email: "a@example.test", planType: "pro" }, workspaceRouting: { chatgptAccountId: "acc-1" } } });
+  const usage = await readCodexUsage();
+  assert.equal(usage.state, "ok"); assert.equal(usage.windows.fiveHour?.usedPercent, 12);
+  assert.equal(usage.account, accountFingerprint("codex", "acc-1", "a@example.test"));
+  assert(!JSON.stringify(usage).includes("example"));
+});
+
+test("a failing or missing account read keeps the quota without a fingerprint", { skip: unixOnly }, async t => {
+  for (const account of [{ error: { code: -32601, message: "unknown method" } }, null]) {
+    fakeAppServer(t, account);
+    const usage = await readCodexUsage();
+    assert.equal(usage.state, "ok"); assert.equal(usage.account, undefined);
+  }
 });
