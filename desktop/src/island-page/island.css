@@ -22,6 +22,11 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
 .logo { left: 50%; width: 14px; height: 16px; fill: var(--logo); transform: translate(-50%, -50%) scale(.55);
   transition: opacity .16s ease, transform .2s ease, fill .45s ease; }
 .logo.on { opacity: 1; transform: translate(-50%, -50%) scale(1); transition: opacity .28s ease .14s, transform .55s cubic-bezier(.3, 1.6, .5, 1) .14s, fill .45s ease; }
+/* Now and then the two capsules blink like a pair of eyes: each squashes shut around its own centre. */
+.logo path { transform-box: fill-box; transform-origin: center; }
+.logo.blink path { animation: blink .2s ease-in-out; }
+.logo.blink.twice path { animation: blink .2s ease-in-out 2; }
+@keyframes blink { 45%, 55% { transform: scaleY(.1); } }
 
 /* Staggered entrance: each child slides and sharpens in after the pill has opened. */
 .usage, .notice { left: 0; right: 0; display: flex; align-items: center; transform: translateY(-50%); }
@@ -85,5 +90,5 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
   .panel > *, .panel.on > * { transform: none !important; transition: none !important; }
   .usage > *, .notice > *, .on > * { filter: none !important; transform: none !important; transition-delay: 0s !important; }
   .logo, .logo.on { transform: translate(-50%, -50%); }
-  .bar .fill.landed, .notice.urgent.on .ring { animation: none; }
+  .bar .fill.landed, .notice.urgent.on .ring, .logo.blink path { animation: none; }
 }
