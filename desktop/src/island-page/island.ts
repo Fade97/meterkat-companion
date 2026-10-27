@@ -157,10 +157,22 @@ function appear() {
   logo.classList.add("on");
 }
 
+/** Every two to four minutes the resting mark blinks, now and then twice; never while it is hidden or for reduced motion. */
+function scheduleBlink() {
+  window.setTimeout(() => {
+    if (logo.classList.contains("on") && !document.hidden && !reduced.matches) {
+      logo.classList.remove("blink", "twice"); void logo.getBoundingClientRect();
+      logo.classList.add("blink"); logo.classList.toggle("twice", Math.random() < 0.25);
+    }
+    scheduleBlink();
+  }, 120_000 + Math.random() * 120_000);
+}
+logo.addEventListener("animationend", () => logo.classList.remove("blink", "twice"));
+
 // ---- Panel -----------------------------------------------------------------------------------------------------
 
 const esc = (value: unknown) => String(value).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]!));
-const MARK = $<SVGPathElement>(".logo path").getAttribute("d")!;
+const MARK = [...document.querySelectorAll<SVGPathElement>(".logo path")].map(path => path.getAttribute("d")).join(" ");
 
 function panelHtml(now: number) {
   const meaning = mode === "remaining" ? "Remaining" : "Used";
@@ -230,4 +242,5 @@ setInterval(() => { if (expanded) springTo(renderPanel(Date.now()), 260, 24); },
 document.addEventListener("pointerup", event => { if (event.button === 0) api.toggle(); });
 
 draw();
+scheduleBlink();
 api.onUpdate(update);
