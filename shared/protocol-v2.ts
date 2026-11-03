@@ -121,9 +121,10 @@ export function parsePairingLink(link: string): PairingLink {
 }
 
 /** Proof-of-work difficulty bounds shared by the Node relay and the Worker. */
+export const MAX_POW_BITS = 22;
 export function parsePowBits(value: unknown) {
   const bits = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  if (typeof bits !== "number" || !Number.isSafeInteger(bits) || bits < 0 || bits > 32) throw new Error("POW_BITS must be an integer between 0 and 32");
+  if (typeof bits !== "number" || !Number.isSafeInteger(bits) || bits < 0 || bits > MAX_POW_BITS) throw new Error("POW_BITS must be an integer between 0 and 22");
   return bits;
 }
 

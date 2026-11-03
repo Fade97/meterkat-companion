@@ -88,7 +88,7 @@ test("registration uses anonymous v2 proof of work and never sends the admin tok
   globalThis.fetch = (async (input: string | URL | Request, init?: RequestInit) => {
     const url = String(input); const auth = new Headers(init?.headers).get("authorization"); seen.push({ url, auth });
     if (url.endsWith("/v2/challenge")) return Response.json({ challenge: "c", bits: 1 });
-    if (url.endsWith("/v2/sources")) return Response.json({ sourceId: "src.mac", writerToken: "w" }, { status: 201 });
+    if (url.endsWith("/v2/sources")) return Response.json({ sourceId: "a".repeat(22), writerToken: "a".repeat(22) + "." + "b".repeat(43) }, { status: 201 });
     return new Response(null, { status: 404 });
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = original; });

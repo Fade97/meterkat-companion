@@ -62,8 +62,8 @@ test("tokens, links and challenges reject tampering", async () => {
   const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
   const last = alphabet.indexOf(minted.at(-1)!);
   for (let spare = 1; spare < 16; spare++) assert(!await verifySourceId("server-secret", minted.slice(0, -1) + alphabet[last ^ spare]), "non-canonical aliases are rejected");
-  for (const bad of ["33", "-1", "1.5", "", "abc"]) assert.throws(() => parsePowBits(bad));
-  assert.equal(parsePowBits("20"), 20); assert.equal(parsePowBits(0), 0);
+  for (const bad of ["23", "32", "33", "-1", "1.5", "", "abc"]) assert.throws(() => parsePowBits(bad));
+  assert.equal(parsePowBits("22"), 22); assert.equal(parsePowBits("20"), 20); assert.equal(parsePowBits(0), 0);
   const challenge = await signChallenge("server-secret", { sid: id, exp: 2000, bits: 8 });
   const solution = solveChallenge(challenge, 8);
   assert.equal((await verifyChallenge("server-secret", challenge, solution, 1000))?.sid, id);

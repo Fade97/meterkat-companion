@@ -159,7 +159,7 @@ Limits:
 | stale source | 90 days without upload → source deleted | source alarm |
 | unused source | 72 h after registration with no upload and no paired phone → deleted | source alarm |
 
-"Client" means the IPv4 address, or the /64 prefix for IPv6 (one host usually controls a whole /64). `POW_BITS` must be an integer from 0 to 32; the Worker answers `503` when it or the server secret is missing or invalid. Request bodies are read as a stream and cut off at 16 KiB regardless of `Content-Length`. Malformed input is `400`; unexpected failures are `500`, never disguised as client errors.
+"Client" means the IPv4 address, or the /64 prefix for IPv6 (one host usually controls a whole /64). `POW_BITS` must be an integer from 0 to 22; the Worker answers `503` when it or the server secret is missing or invalid. Request bodies are read as a stream and cut off at 16 KiB regardless of `Content-Length`. Malformed input is `400`; unexpected failures are `500`, never disguised as client errors.
 
 The Node relay applies the same per-source limits. Its registration is closed (admin token only) unless `RELAY_OPEN_REGISTRATION=1`; its IP limiter uses the socket peer.
 
@@ -185,3 +185,5 @@ D1 was considered. A single D1 database adds a global write hot spot and needs a
 - The companion deletes its local pairing page (which contains `K`) once the code has expired.
 - The companion's `generatedAt` is monotonic (`max(now, previous + 1)`), so a small clock step back does not stall uploads with `409`.
 - Test vectors in [`protocol/v2-test-vectors.json`](../../protocol/v2-test-vectors.json) pin HKDF, AAD, AES-GCM, padding, link parsing and PoW for the Kotlin implementation. The protocol reference for client authors is [`protocol/v2.md`](../../protocol/v2.md).
+
+Client safety limits: challenges are capped at 2048 characters and computation at 30 seconds (monotonic clock). Both clients and relay configuration accept 0–22 bits; the default remains 20. Operators using 23–32 must lower the setting before upgrading. Proof-of-work is probabilistic: even accepted difficulties can time out on slow machines; retry or reduce the configured difficulty.
