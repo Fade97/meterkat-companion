@@ -1,3 +1,4 @@
+import { relayJson, registrationFields } from "./relay-response.js";
 import { registerV2 } from "./relay-v2.js";
 import { relayUrl, removeState, writeState, type Config } from "./state.js";
 
@@ -23,7 +24,7 @@ export async function registerWithRelay(relayOrigin: string, options: Registrati
     if (!options.adminToken) throw new Error("Protocol v1 registration requires RELAY_ADMIN_TOKEN");
     const response = await fetchImpl(`${relay}/v1/sources`, { method: "POST", headers: { Authorization: `Bearer ${options.adminToken}`, "Content-Type": "application/json" }, signal: AbortSignal.timeout(15_000), redirect: "error" });
     if (!response.ok) throw new Error(`Relay request failed (${response.status})`);
-    const config = { relay, ...await response.json() as Omit<Config, "relay"> };
+    const config = { relay, ...registrationFields(await relayJson(response), false) };
     writeState("config.json", config); return config;
   }
   const adminToken = isHostedRelay(relay) ? undefined : options.adminToken;
