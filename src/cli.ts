@@ -72,7 +72,7 @@ function spawnSyncSafe(file: string, args: string[]) {
   return result.status === 0 ? result.stdout.trim() : undefined;
 }
 function flag(args: string[], name: string) { const i = args.indexOf(name); if (i < 0) return undefined; const value = args[i + 1]; if (!value || value.startsWith("--")) throw new Error(`${name} needs a value`); return value; }
-const RELAY_TERMS = "The hosted relay (meterkat-relay.fabian-duerkop.de) is a separate free service under its terms of use: https://meterkat.fabian-duerkop.de/terms";
+const RELAY_TERMS = "The hosted relay (relay.meterkat.fdu.gg) is a separate free service under its terms of use: https://meterkat.fabian-duerkop.de/terms";
 const USAGE = "Commands: licenses, setup [--relay <origin>] [--dry-run] [--autostart|--no-autostart] [--no-open] [--force], version, update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease], register <relay> [--v1], capture-claude, inspect, probe-antigravity, pair [phone-relay-origin], once, run, background, revoke [device-id], devices, rotate-key [--yes], delete [--yes], autostart install|remove|status";
 async function main() {
   const [command, argument] = process.argv.slice(2);

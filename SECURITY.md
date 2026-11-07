@@ -7,7 +7,7 @@ Include what you found, how to reproduce it and the affected version (`meterkat 
 In scope:
 
 - this repository: collectors, local state, pairing, relay client, autostart, self-update and packaging;
-- protocol v2 ([protocol/v2.md](protocol/v2.md)) and its use by the hosted relay `meterkat-relay.fabian-duerkop.de`;
+- protocol v2 ([protocol/v2.md](protocol/v2.md)) and its use by the hosted relay `relay.meterkat.fdu.gg` (earlier `meterkat-relay.fabian-duerkop.de`, still served for existing registrations);
 - the signed releases of this repository.
 
 Out of scope: denial of service through volume against the hosted relay, and findings in the provider CLIs themselves (report those to Anthropic, OpenAI or Google).

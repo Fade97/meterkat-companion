@@ -44,7 +44,7 @@ Snapshots are encrypted with a 32-byte key generated on your machine; it reaches
 
 ## Relay
 
-By default the companion uses the hosted relay `https://meterkat-relay.fabian-duerkop.de`, a free service under its own [terms of use](https://meterkat.fabian-duerkop.de/terms) and [privacy policy](https://meterkat.fabian-duerkop.de/privacy). Registration is anonymous (a short proof of work). Use `--relay <origin>` or `AI_USAGE_RELAY` for another relay that speaks protocol v2; the app accepts it under **Advanced: custom relay**.
+By default the companion uses the hosted relay `https://relay.meterkat.fdu.gg`, a free service under its own [terms of use](https://meterkat.fabian-duerkop.de/terms) and [privacy policy](https://meterkat.fabian-duerkop.de/privacy). Registration is anonymous (a short proof of work). Use `--relay <origin>` or `AI_USAGE_RELAY` for another relay that speaks protocol v2; the app accepts it under **Advanced: custom relay**.
 
 ## Development
 

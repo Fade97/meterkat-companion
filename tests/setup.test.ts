@@ -24,11 +24,11 @@ function deps(overrides: Partial<SetupDeps> = {}) {
 
 test("setup --dry-run only describes the plan: no probes, writes, relay calls or prompts", async () => {
   const { deps: d, calls, lines } = deps();
-  await setup({ dryRun: true, relay: "https://meterkat-relay.fabian-duerkop.de", open: true }, d);
+  await setup({ dryRun: true, relay: "https://relay.meterkat.fdu.gg", open: true }, d);
   assert.deepEqual(calls, ["detect:false"]);
   const text = lines.join("\n");
   assert.match(text, /Would install to \/home\/u\/.local\/bin\/meterkat/);
-  assert.match(text, /Would register with https:\/\/meterkat-relay\.fabian-duerkop\.de \(anonymous, proof of work/);
+  assert.match(text, /Would register with https:\/\/relay\.meterkat\.fdu\.gg \(anonymous, proof of work/);
   assert.match(text, /Would ask before enabling autostart/);
 });
 
@@ -92,7 +92,8 @@ test("registration uses anonymous v2 proof of work and never sends the admin tok
     return new Response(null, { status: 404 });
   }) as typeof fetch;
   t.after(() => { globalThis.fetch = original; });
-  for (const relay of [HOSTED_RELAY, STAGING_RELAY]) {
+  // The earlier fabian-duerkop.de hostnames are the same hosted relays and never receive the operator token either.
+  for (const relay of [HOSTED_RELAY, STAGING_RELAY, "https://meterkat-relay.fabian-duerkop.de", "https://meterkat-relay-staging.fabian-duerkop.de"]) {
     seen.length = 0;
     const config = await registerWithRelay(relay, { adminToken: "admin-secret" });
     assert.equal((config as { protocol?: number }).protocol, 2);

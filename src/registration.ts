@@ -2,11 +2,13 @@ import { relayJson, registrationFields } from "./relay-response.js";
 import { registerV2 } from "./relay-v2.js";
 import { relayUrl, removeState, writeState, type Config } from "./state.js";
 
-export const HOSTED_RELAY = "https://meterkat-relay.fabian-duerkop.de";
-export const STAGING_RELAY = "https://meterkat-relay-staging.fabian-duerkop.de";
+export const HOSTED_RELAY = "https://relay.meterkat.fdu.gg";
+export const STAGING_RELAY = "https://relay-staging.meterkat.fdu.gg";
+/** Earlier hostnames of the same hosted relays (until 2026-11); existing registrations keep using them. */
+const LEGACY_HOSTED_RELAYS = ["https://meterkat-relay.fabian-duerkop.de", "https://meterkat-relay-staging.fabian-duerkop.de"];
 /** Relay for `setup` without --relay: AI_USAGE_RELAY (e.g. staging) or the hosted production relay. */
 export const defaultRelay = (env: NodeJS.ProcessEnv = process.env) => env.AI_USAGE_RELAY ? relayUrl(env.AI_USAGE_RELAY) : HOSTED_RELAY;
-const isHostedRelay = (relay: string) => relay === HOSTED_RELAY || relay === STAGING_RELAY;
+const isHostedRelay = (relay: string) => relay === HOSTED_RELAY || relay === STAGING_RELAY || LEGACY_HOSTED_RELAYS.includes(relay);
 
 export type RegistrationOptions = {
   /** Operator credential for closed self-hosted relays. Never sent to the hosted Meterkat relays. */
