@@ -31,6 +31,8 @@ export type AppState = {
   island: { enabled: boolean; anchor: IslandAnchor; unsupported: string | null };
   /** Whether bars and percentages show the used share or what is left (window, island and tray). */
   bars: BarMode;
+  /** The key for the elapsed mark was dismissed ("Got it"): it then shows in Settings › Display only. */
+  keyDismissed: boolean;
 };
 export type Pairing = { qr: string; expiresAt: number };
 export type Device = { id: string; pairedAt: number };
@@ -55,6 +57,8 @@ export interface MeterkatApi {
   setIsland(enabled: boolean): Promise<void>;
   setIslandAnchor(anchor: IslandAnchor): Promise<void>;
   setBarMode(mode: BarMode): Promise<void>;
+  /** Hides the key for the elapsed mark in the overview; Settings keeps it. */
+  dismissKey(): Promise<void>;
   /** Removes the CLI autostart, stops its process and lets the app sync instead. */
   takeOver(): Promise<void>;
   checkUpdate(): Promise<void>;
@@ -73,7 +77,7 @@ export const CHANNEL = {
   detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync",
   startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
-  autostart: "meterkat:autostart", island: "meterkat:island-enabled", islandAnchor: "meterkat:island-anchor", barMode: "meterkat:bar-mode", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
+  autostart: "meterkat:autostart", island: "meterkat:island-enabled", islandAnchor: "meterkat:island-anchor", barMode: "meterkat:bar-mode", dismissKey: "meterkat:dismiss-key", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
   installUpdate: "meterkat:install-update", automaticUpdates: "meterkat:automatic-updates", updateChannel: "meterkat:update-channel",
   open: "meterkat:open", hide: "meterkat:hide", quit: "meterkat:quit",
 } as const;

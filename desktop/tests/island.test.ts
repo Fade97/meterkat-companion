@@ -7,7 +7,7 @@ import type { ProviderUsage, Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow, type ForegroundWindow } from "../src/ai-apps.js";
 import { linuxDescendants, luminance, menuOpen, nextTone, parseActiveWindow, parseExtents, parseWindowInfo, parseWindowProps, threadedProbe, visibleFrame, unsupportedReason, type ForegroundProbe, type ProbeRequest, type ProbeResponse, type ProbeWorker } from "../src/foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "../src/island-events.js";
-import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, oneClick, samplePoints } from "../src/island-shape.js";
+import { hits, islandEdge, islandFootprint, islandPath, ISLAND_SIZES, missedClicks, oneClick, samplePoints, ISLAND_WINDOW_WIDTH } from "../src/island-shape.js";
 
 const now = 1_800_000_000_000;
 const MIN = 60_000;
@@ -31,7 +31,9 @@ test("the panel is a rounded rectangle whose sides run straight down from the si
   const d = islandPath({ cx: 200, top: 2, w: 380, h: 200, fillet: 19, radius: 22 });
   // Upper corner centres 24 below the edge (gap 2 + radius 22), lower ones at 202 - 22 = 180.
   assert.equal(d, "M-9,-2L-9,0A19,24 0 0 1 10,24L10,180A22,22 0 0 0 32,202L368,202A22,22 0 0 0 390,180L390,24A19,24 0 0 1 409,0L409,-2Z");
-  assert.equal(islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }), 418);
+  assert.equal(islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }), 438);
+  // Every shape, the widened pill included, fits the window with a little room for its shadow.
+  assert.ok(Object.values(ISLAND_SIZES).every(size => islandFootprint({ cx: 0, ...size }) + 2 * 6 <= ISLAND_WINDOW_WIDTH));
   // A radius above h / 2 is the pill again.
   assert.equal(islandPath({ cx: 200, top: 2, w: 300, h: 50, fillet: 19, radius: 80 }), islandPath({ cx: 200, top: 2, w: 300, h: 50, fillet: 19 }));
 });
@@ -81,7 +83,10 @@ test("usage is announced after a jump of 10 points or when it crosses 50, 75 or 
   const t = new IslandTracker(), reset = now + 5 * 3_600_000;
   assert.deepEqual(kinds(t.update(snap(provider("claude", 30, reset)), now)), [], "first sight only sets the baseline");
   assert.deepEqual(kinds(t.update(snap(provider("claude", 38, reset)), now)), []);
-  assert.deepEqual(kinds(t.update(snap(provider("claude", 41, reset)), now)), ["usage claude 30->41"]);
+  const jump = t.update(snap(provider("claude", 41, reset)), now);
+  assert.deepEqual(kinds(jump), ["usage claude 30->41"]);
+  // The pill draws the same elapsed tick as every other bar, so the event carries the window.
+  assert.deepEqual(jump.map(e => e.kind === "usage" && [e.resetsAt, e.windowMs]), [[reset, 5 * 3_600_000]]);
   assert.deepEqual(kinds(t.update(snap(provider("claude", 41, reset)), now)), [], "unchanged data says nothing twice");
   assert.deepEqual(kinds(t.update(snap(provider("claude", 50, reset)), now)), ["usage claude 41->50"], "crossed 50 %");
   assert.deepEqual(kinds(t.update(snap(provider("claude", 58, reset)), now)), []);
@@ -127,7 +132,7 @@ test("an unused window has nothing to reset", () => {
 
 test("the queue keeps the newest event per bar and shows resets before usage", () => {
   const base = { provider: "claude", label: "5-hour", at: now, expiresAt: now + 10 * MIN };
-  const usage = (to: number): IslandEvent => ({ ...base, key: "claude:5-hour", kind: "usage", from: 40, to });
+  const usage = (to: number): IslandEvent => ({ ...base, key: "claude:5-hour", kind: "usage", from: 40, to, resetsAt: now + 2 * 60 * MIN });
   const soon: IslandEvent = { ...base, key: "codex:5-hour", provider: "codex", kind: "reset-soon", resetsAt: now + 5 * MIN, usedPercent: 80, expiresAt: now + 5 * MIN };
   let queue = enqueue([], [usage(55)]);
   queue = enqueue(queue, [usage(70), soon]);

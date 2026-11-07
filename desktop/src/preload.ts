@@ -25,6 +25,7 @@ const api: MeterkatApi = {
   setIsland: enabled => invoke(CHANNEL.island, enabled),
   setIslandAnchor: anchor => invoke(CHANNEL.islandAnchor, anchor),
   setBarMode: mode => invoke(CHANNEL.barMode, mode),
+  dismissKey: () => invoke(CHANNEL.dismissKey),
   takeOver: () => invoke(CHANNEL.takeOver),
   checkUpdate: () => invoke(CHANNEL.checkUpdate),
   installUpdate: () => invoke(CHANNEL.installUpdate),

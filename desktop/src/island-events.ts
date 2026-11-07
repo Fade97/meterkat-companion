@@ -12,7 +12,8 @@ const KEEP_MS = 10 * 60_000;
 
 type Base = { key: string; provider: string; label: string; at: number; expiresAt: number };
 export type IslandEvent =
-  | Base & { kind: "usage"; from: number; to: number }
+  /** `resetsAt` and `windowMs` (unknown for quota buckets) place the elapsed tick on the pill. */
+  | Base & { kind: "usage"; from: number; to: number; resetsAt: number; windowMs?: number }
   | Base & { kind: "reset-soon"; resetsAt: number; usedPercent: number }
   | Base & { kind: "reset-done" };
 
@@ -31,7 +32,7 @@ export class IslandTracker {
         const base = { key, provider: provider.id, label: bar.label, at: now };
         if (provider.state === "ok") {
           const usage = this.usage(key, bar.usedPercent);
-          if (usage) events.push({ ...base, kind: "usage", ...usage, expiresAt: now + KEEP_MS });
+          if (usage) events.push({ ...base, kind: "usage", ...usage, resetsAt: bar.resetsAt, windowMs: bar.windowMs, expiresAt: now + KEEP_MS });
         }
         events.push(...this.reset(key, bar.resetsAt, bar.usedPercent, now).map(event => ({ ...base, ...event })));
       }
