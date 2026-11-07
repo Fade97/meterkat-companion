@@ -13,7 +13,7 @@ import { readState, writeState, removeState, stateDirectory, relayUrl, type Conf
 import { isV2, pairingLinkV2, rotateKey, uploadV2, writerCall } from "./relay-v2.js";
 import { COMPANION_VERSION } from "./version.js";
 import { automaticUpdates, CHECK_INTERVAL_MS, checkForUpdate, realRunner, recoverInterruptedSwap, rollback, setAutomatic, setChannel, skipVersion, update, updateChannel, updateSettings, type UpdateChannel } from "./update.js";
-import { defaultRelay, registerWithRelay } from "./registration.js";
+import { defaultRelay, migrateHostedRelay, registerWithRelay } from "./registration.js";
 import { askYesNo, defaultInstallTarget, installExecutable, openFile, setup } from "./setup.js";
 import { detectProviders } from "./providers.js";
 import { confirmDestructive, destructiveArguments, isDestructive, terminalConfirmIo } from "./confirm.js";
@@ -81,6 +81,7 @@ async function main() {
   if (isDestructive(command)) destructiveArguments(command, process.argv.slice(3));
   if (isSea()) { try { recoverInterruptedSwap(process.execPath); } catch { /* best effort; never blocks a command */ } }
   if (command === "version" || command === "--version") { console.log(COMPANION_VERSION); return; }
+  try { migrateHostedRelay(); } catch { /* best effort; the earlier hostname keeps working */ }
   if (command === "licenses") {
     // Packaged builds embed the companion's MIT licence and the notices for Node.js and every bundled package (scripts/package.ts).
     console.log(isSea() ? `${getAsset("LICENSE", "utf8").trim()}\n\n${RELAY_TERMS}\n\n# Third-party notices\n\n${getAsset("THIRD_PARTY_NOTICES.txt", "utf8")}` : `The Meterkat companion is open source under the MIT licence (LICENSE).\n${RELAY_TERMS}\nThird-party notices are generated when packaging: pnpm package`); return;

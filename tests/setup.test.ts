@@ -77,6 +77,25 @@ test("setup never downgrades a newer installed copy unless forced", async () => 
   assert.ok(older.calls.includes("installExecutable"));
 });
 
+test("a registration on an earlier hosted-relay hostname moves to the current one", async t => {
+  const { mkdtempSync, rmSync } = await import("node:fs"); const { tmpdir } = await import("node:os");
+  const state = mkdtempSync(join(tmpdir(), "meterkat-migrate-")); t.after(() => rmSync(state, { recursive: true, force: true }));
+  const previous = process.env.AI_USAGE_STATE_DIR; process.env.AI_USAGE_STATE_DIR = state;
+  t.after(() => { if (previous === undefined) delete process.env.AI_USAGE_STATE_DIR; else process.env.AI_USAGE_STATE_DIR = previous; });
+  const { migrateHostedRelay, HOSTED_RELAY, STAGING_RELAY } = await import("../src/registration.js");
+  const { readState, writeState } = await import("../src/state.js");
+  const source = { writerToken: "w", sourceId: "s", protocol: 2, sourceKey: "k", epoch: 3 };
+  for (const [earlier, current] of [["https://meterkat-relay.fabian-duerkop.de", HOSTED_RELAY], ["https://meterkat-relay-staging.fabian-duerkop.de", STAGING_RELAY]]) {
+    writeState("config.json", { relay: earlier, ...source }); migrateHostedRelay();
+    assert.deepEqual(readState("config.json"), { relay: current, ...source });
+  }
+  // Self-hosted relays and an unregistered companion are left alone.
+  writeState("config.json", { relay: "https://relay.example", ...source }); migrateHostedRelay();
+  assert.equal(readState<{ relay: string }>("config.json")?.relay, "https://relay.example");
+  rmSync(join(state, "config.json")); migrateHostedRelay();
+  assert.equal(readState("config.json"), undefined);
+});
+
 test("registration uses anonymous v2 proof of work and never sends the admin token to a hosted relay", async t => {
   const { mkdtempSync, rmSync } = await import("node:fs"); const { tmpdir } = await import("node:os");
   const state = mkdtempSync(join(tmpdir(), "meterkat-register-")); t.after(() => rmSync(state, { recursive: true, force: true }));

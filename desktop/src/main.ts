@@ -9,7 +9,7 @@ import { parseSnapshot, type Snapshot } from "../../shared/snapshot.js";
 import { defaultContext, remove as removeCliAutostart, status as cliAutostartStatus } from "../../src/autostart.js";
 import { collect } from "../../src/collect.js";
 import { detectProviders } from "../../src/providers.js";
-import { defaultRelay } from "../../src/registration.js";
+import { defaultRelay, migrateHostedRelay } from "../../src/registration.js";
 import { isV2, pairingLinkV2, uploadV2, writerCall, type V2Config } from "../../src/relay-v2.js";
 import { readState, relayUrl, stateDirectory, writeState, type Config } from "../../src/state.js";
 import { automaticUpdates, checkForUpdate, compareVersions, isPrerelease, setAutomatic, setChannel, updateChannel, updateSettings, type Release, type UpdateChannel } from "../../src/update.js";
@@ -449,6 +449,7 @@ else {
     if (process.platform === "linux") process.env.PATH = mergePath(process.env.PATH, loginShellPath());
     Menu.setApplicationMenu(null);
     registerIpc();
+    try { migrateHostedRelay(); } catch { /* best effort; the earlier hostname keeps working */ }
     // Autostart starts hidden, and so does an update started from the tray; an unregistered companion always opens its setup.
     const hidden = process.argv.includes(HIDDEN_ARG) || (process.argv.includes(UPDATED_ARG) && settings().relaunchHidden === true);
     createWindow(!hidden || !config());
