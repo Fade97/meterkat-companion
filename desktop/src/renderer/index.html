@@ -9,14 +9,15 @@
 </head>
 <body>
   <header class="top">
-    <div class="brand">
-      <svg class="mark" viewBox="0 0 256 256" aria-hidden="true"><path fill-rule="evenodd" d="M52 70A34 34 0 0 1 120 70V186A34 34 0 0 1 52 186Z M85 74A11 11 0 1 0 107 74A11 11 0 1 0 85 74Z M136 118A34 34 0 0 1 204 118V186A34 34 0 0 1 136 186Z M169 122A11 11 0 1 0 191 122A11 11 0 1 0 169 122Z"/></svg>
-      <span>Meterkat</span>
+    <!-- The lockup comes from brand-lockup.ts; the wordmark is drawn, never typed. -->
+    <div id="brand" class="brand"></div>
+    <div class="sync">
+      <div id="status" class="status" role="status" aria-live="polite"></div>
+      <button id="sync" class="btn ghost small" data-action="sync" hidden>Sync now</button>
     </div>
-    <div id="status" class="status" role="status" aria-live="polite"></div>
   </header>
   <main id="view"></main>
-  <nav id="tabs" class="tabs" hidden>
+  <nav id="tabs" class="tabs" aria-label="Sections" hidden>
     <button data-tab="overview">Overview</button>
     <button data-tab="phones">Phones</button>
     <button data-tab="settings">Settings</button>

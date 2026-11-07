@@ -1,6 +1,6 @@
 // Meterkat desktop: the companion as a tray app. The window collapses into the tray on close or minimise; the
 // tray menu reopens it, syncs, pairs a phone or quits. Syncing, pairing and the relay calls reuse the CLI modules.
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, Notification, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from "electron";
 import { homedir, uptime } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -34,7 +34,7 @@ const LINKS: Record<Exclude<ExternalLink, "licenses">, string> = {
   terms: "https://meterkat.fabian-duerkop.de/terms",
   privacy: "https://meterkat.fabian-duerkop.de/privacy",
 };
-type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean; island?: boolean; islandAnchor?: IslandAnchor; showRemaining?: boolean };
+type DesktopSettings = { trayHintShown?: boolean; notifiedVersion?: string; updateCheckedAt?: number; updateLatest?: string; relaunchHidden?: boolean; island?: boolean; islandAnchor?: IslandAnchor; showRemaining?: boolean; keyDismissed?: boolean };
 
 const assets = join(app.getAppPath(), "assets");
 let win: BrowserWindow | null = null;
@@ -114,6 +114,7 @@ function state(): AppState {
     update: { ...update, automatic: automaticUpdates(), channel: updateChannel() },
     island: { enabled: islandEnabled(), anchor: islandAnchor(), unsupported: island?.unsupported ?? unsupportedReason(process.platform, process.env) },
     bars: barMode(),
+    keyDismissed: settings().keyDismissed === true,
   };
 }
 
@@ -320,7 +321,7 @@ async function takeOver() {
 function createWindow(show: boolean) {
   win = new BrowserWindow({
     width: 460, height: 720, minWidth: 380, minHeight: 540, show: false, title: "Meterkat",
-    backgroundColor: "#101318", icon: join(assets, "icon.png"), autoHideMenuBar: true,
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#101318" : "#f2f3f5", icon: join(assets, "icon.png"), autoHideMenuBar: true,
     webPreferences: { preload: join(__dirname, "preload.cjs"), contextIsolation: true, sandbox: true, nodeIntegration: false, spellcheck: false },
   });
   win.removeMenu();
@@ -411,6 +412,7 @@ function registerIpc() {
   handle(CHANNEL.island, (enabled: unknown) => setIsland(enabled === true));
   handle(CHANNEL.islandAnchor, (anchor: unknown) => setIslandAnchor(anchor === "window" ? "window" : "screen"));
   handle(CHANNEL.barMode, (mode: unknown) => setBarMode(mode === "remaining" ? "remaining" : "used"));
+  handle(CHANNEL.dismissKey, () => { saveSettings({ keyDismissed: true }); changed(); });
   handle(CHANNEL.takeOver, () => takeOver());
   handle(CHANNEL.checkUpdate, () => checkUpdate(true));
   handle(CHANNEL.installUpdate, () => installUpdate());

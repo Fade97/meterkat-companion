@@ -1,111 +1,253 @@
 [hidden] { display: none !important; }
+/* Tokens from docs/design/ui-v2.md: ink background, one accent (sand), provider colours only on bars and glyphs.
+   --accent fills (primary buttons, selection, switches), --link colours accent text, --brand/--word draw the lockup. */
 :root {
-  --ink: #101318; --panel: #181c23; --panel-2: #20252e; --line: #2a303b;
-  --text: #f2f4f8; --muted: #9aa3b2; --accent: #f5c451; --accent-ink: #1a1405;
-  --ok: #5fd39a; --warn: #f0a35e; --bad: #f07575;
+  --ink: #101318; --panel: #181c23; --panel-2: #20252e; --line: #2a303b; --line-2: #3a4250;
+  --text: #f2f4f8; --muted: #a7b0bf; --accent: #f5c451; --accent-ink: #1a1405; --link: #f5c451; --brand: #f5c451; --word: #ffffff;
+  --ok: #5fd39a; --warn: #f2b35e; --bad: #f07575; --warn-bg: #2b2416; --tonal: #2e3440;
+  --banner-bg: #2a1719; --banner-line: #4d2427; --banner-text: #f49a9a; --notice-bg: #221d10; --notice-line: #4a3d1c;
   color-scheme: dark;
+}
+/* Light, following the system. Sand never sits on white (docs/brand.md): ink takes over fills, the lockup and focus;
+   accent text is a dark amber, warnings and errors are darker so they keep 4.5:1 on white. */
+@media (prefers-color-scheme: light) {
+  :root {
+    --ink: #f2f3f5; --panel: #ffffff; --panel-2: #eceef2; --line: #dfe2e7; --line-2: #c5cbd4;
+    --text: #101318; --muted: #59616e; --accent: #101318; --accent-ink: #ffffff; --link: #8a5300; --brand: #101318; --word: #101318;
+    --ok: #136c3f; --warn: #8f5300; --bad: #b42323; --warn-bg: #fbf0dc; --tonal: #e2e5ea;
+    --banner-bg: #fdeeee; --banner-line: #f2c9c9; --banner-text: #a31b1b; --notice-bg: #fff6e3; --notice-line: #ecd59d;
+    color-scheme: light;
+  }
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
 body {
   display: flex; flex-direction: column; background: var(--ink); color: var(--text);
-  font: 14px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif; -webkit-font-smoothing: antialiased;
-  user-select: none;
+  font: 14px/1.4 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Roboto, Ubuntu, sans-serif;
+  -webkit-font-smoothing: antialiased; user-select: none;
 }
-button, input { font: inherit; color: inherit; }
-a, .link { color: var(--accent); text-decoration: none; cursor: pointer; background: none; border: 0; padding: 0; }
+button, input, select { font: inherit; color: inherit; }
+a, .link { color: var(--link); text-decoration: none; cursor: pointer; background: none; border: 0; padding: 0; }
+/* Links in running text keep the look but get a 32 px tall hit area; the negative margin keeps the line as it was. */
+.link { display: inline-block; padding: 8px 3px; margin: -8px -3px; }
 a:hover, .link:hover { text-decoration: underline; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 
-.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--line); }
-.brand { display: flex; align-items: center; gap: 8px; font-weight: 650; font-size: 16px; letter-spacing: -0.01em; }
-.mark { width: 26px; height: 26px; fill: var(--accent); }
-.status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; text-align: right; min-width: 0; }
-.status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+/* ---- Header: brand left, sync status and "Sync now" right ---- */
+.top { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 12px 8px 16px; border-bottom: 1px solid var(--line); min-height: 48px; }
+.brand { display: flex; align-items: center; }
+/* Reversed lockup: sand symbol, white wordmark; 18 px tall is 122 px wide (brand minimum 120). */
+.lockup { display: block; height: 18px; width: auto; }
+.lockup .symbol { fill: var(--brand); }
+.lockup .word { fill: var(--word); }
+.sync { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.status { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 12.5px; white-space: nowrap; min-width: 0; }
+/* At larger text the status wraps to a second line; ellipsis (full text in the tooltip) is the safety net beyond that. */
+.status-text { min-width: 0; white-space: normal; line-height: 1.25; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; text-overflow: ellipsis; }
+.status .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
 .status.ok .dot { background: var(--ok); }
+.status.warn .dot { background: var(--warn); }
 .status.busy .dot { background: var(--accent); animation: pulse 1s ease-in-out infinite; }
 .status.bad .dot { background: var(--bad); }
+.status.bad { color: var(--bad); }
 @keyframes pulse { 50% { opacity: .35; } }
 
-main { flex: 1; overflow-y: auto; padding: 16px 18px 24px; }
-.tabs { display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); background: var(--panel); }
-.tabs button { background: none; border: 0; padding: 12px 0 13px; color: var(--muted); font-weight: 550; cursor: pointer; border-top: 2px solid transparent; }
-.tabs button[aria-current="page"] { color: var(--text); border-top-color: var(--accent); }
+main { flex: 1; overflow-y: auto; padding: 8px 14px 5px; }
+/* The scroll area ends above the tab bar (both are in the flow, nothing overlaps). While more content is below, a short
+   fade sits at the bottom edge of the scroll area; at the end of the content it is gone, so nothing rests under it. */
+.tabs { position: relative; display: grid; grid-template-columns: repeat(3, 1fr); border-top: 1px solid var(--line); background: var(--panel); }
+.tabs::before { content: ""; position: absolute; left: 0; right: 10px; bottom: calc(100% + 1px); height: 18px; pointer-events: none;
+  background: linear-gradient(to bottom, transparent, var(--ink)); opacity: 0; transition: opacity .15s; }
+body.more-below .tabs::before { opacity: 1; }
+/* The active tab's mark is drawn inside its button, never over the content above. */
+.tabs button { background: none; border: 0; padding: 11px 0 12px; color: var(--muted); font-weight: 550; font-size: 13.5px; cursor: pointer; }
+.tabs button:hover { color: var(--text); }
+.tabs button[aria-current="page"] { color: var(--text); box-shadow: inset 0 2px 0 var(--accent); }
 
-h1 { font-size: 20px; margin: 4px 0 6px; letter-spacing: -0.015em; }
-h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 22px 0 8px; font-weight: 600; }
-h2:first-child { margin-top: 0; }
+/* ---- Type ---- */
+h1 { font-size: 20px; line-height: 1.25; margin: 0 0 6px; letter-spacing: -0.015em; font-weight: 650; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); margin: 18px 14px 6px; font-weight: 600; }
+h2:first-child, .banner + h2 { margin-top: 2px; }
+h3 { margin: 0; font-size: 14px; font-weight: 650; }
 p { margin: 0 0 10px; }
+.lead { color: var(--muted); }
+h1 + .lead { margin-bottom: 18px; }
 .muted { color: var(--muted); }
 .small { font-size: 12.5px; }
+.mono { font-variant-numeric: tabular-nums; letter-spacing: .02em; }
 .error { color: var(--bad); }
+.banner { padding: 8px 12px; border-radius: 10px; background: var(--banner-bg); border: 1px solid var(--banner-line); margin: 0 0 10px; }
+.banner p { margin: 0; }
+.banner .error { color: var(--banner-text); }
+.footnote { margin: 8px 14px 0; }
 
-.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 14px 14px 12px; margin-bottom: 10px; }
-.card-head { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 10px; }
-.card-head strong { font-size: 15px; }
-.badge { font-size: 11.5px; padding: 2px 8px; border-radius: 99px; background: var(--panel-2); color: var(--muted); }
-.badge.ok { color: var(--ok); }
-.badge.warn { color: var(--warn); }
+/* ---- Overview: the tightest quota, then one card per provider ---- */
+/* The headline: why on its own line, then provider and window with the big number, then the detail. */
+.summary { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "reason reason" "title value" "verdict verdict" "also also" "key key"; column-gap: 14px; row-gap: 0;
+  align-items: baseline; padding: 7px 14px 6px; margin-bottom: 10px; border-radius: 14px; background: var(--panel-2); border: 1px solid var(--line); line-height: 1.3; }
+.summary-reason { grid-area: reason; color: var(--muted); font-size: 12.5px; font-weight: 600; text-align: left; }
+.summary-reason.fast, .summary-reason.low { color: var(--warn); }
+.summary-reason.limit { color: var(--bad); }
+.summary-title { grid-area: title; display: flex; flex-wrap: wrap; align-items: center; gap: 0 6px; min-width: 0; font-weight: 600; font-size: 13.5px; white-space: nowrap; }
+.summary-title .provider-mark { width: 14px; height: 14px; }
+.summary-value { grid-area: value; justify-self: end; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.summary-value b { color: var(--text); font-size: 22px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-right: 1px; }
+/* Wraps rather than clips when the text is larger (zoom); at 100 % it is one line. */
+.summary-verdict { grid-area: verdict; font-size: 12.5px; }
+.summary.warn .summary-value b { color: var(--warn); }
+.summary.bad .summary-value b { color: var(--bad); }
+.summary.old .summary-value b { color: var(--muted); }
 
-.bar { display: grid; grid-template-columns: 1fr auto; align-items: baseline; column-gap: 10px; row-gap: 5px; margin: 10px 0 0; }
-.bar-label { color: var(--muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
-.bar-value { text-align: right; font-variant-numeric: tabular-nums; font-weight: 600; }
-.track { grid-column: 1 / -1; height: 8px; border-radius: 99px; background: var(--panel-2); overflow: hidden; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; padding: 8px 14px 8px; margin-bottom: 10px; }
+/* The last card needs no gap below it: the overview with key and "Also at risk" still fits 460x720 without scrolling. */
+main > .card:last-child { margin-bottom: 0; }
+.card > p:last-child { margin: 8px 0 0; }
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; min-height: 22px; }
+.chip { font-size: 12px; font-weight: 550; padding: 2px 9px; border-radius: 99px; background: var(--panel-2); color: var(--muted); white-space: nowrap; }
+.chip.warn { color: var(--warn); background: var(--warn-bg); }
+.card-tags { display: flex; align-items: center; gap: 8px; }
+.no-pace { color: var(--muted); font-size: 12px; }
+.small-chip { margin-left: 6px; padding: 1px 8px; vertical-align: 1px; color: var(--link); background: var(--warn-bg); }
+
+/* A quota row: label and big number, the bar with its elapsed tick, then the reset and the pace verdict. */
+.quota { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 12px; margin-top: 5px; line-height: 1.2; }
+.quota-label { color: var(--muted); font-size: 13px; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.quota-value { justify-self: end; color: var(--muted); font-size: 12.5px; white-space: nowrap; }
+.quota-value b { color: var(--text); font-size: 18px; font-weight: 650; letter-spacing: -0.01em; font-variant-numeric: tabular-nums; margin-right: 1px; }
+.quota.warn .quota-value b { color: var(--warn); }
+.quota.bad .quota-value b { color: var(--bad); }
+.track { grid-column: 1 / -1; position: relative; height: 6px; margin: 4px 0 5px; border-radius: 99px; background: var(--panel-2); }
 /* Bars use only the provider's colour (as on Android); --provider is set per card from the renderer. */
 .fill { height: 100%; border-radius: inherit; background: var(--provider, var(--muted)); }
+/* Old data (stale, sign-in needed): a dimmer bar next to the chip with its age, and no forecast. */
+.quota.old .fill { opacity: .5; }
+/* How much of the window has passed: a bar running ahead of it runs out before the reset. */
+.tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--text); box-shadow: 0 0 0 1.5px var(--panel); }
+.quota-reset { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; min-width: 0; }
+.pace { font-size: 12px; white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.pace.ok, .pace.tight, .pace.seen { color: var(--muted); }
+.pace.fast, .pace.low { color: var(--warn); font-weight: 600; }
+.pace.limit { color: var(--bad); font-weight: 600; }
 .provider-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--provider, var(--muted)); flex: none; }
 .provider { display: inline-flex; align-items: center; gap: 8px; }
 .provider-mark { width: 16px; height: 16px; flex: none; fill: var(--provider, var(--muted)); }
 .not-set-up .provider-mark, .not-set-up .provider-dot { opacity: .45; }
-.bar-reset { grid-column: 1 / -1; color: var(--muted); font-size: 11.5px; }
-.observed { margin-top: 8px; font-size: 11.5px; color: var(--muted); }
 
-.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 9px 14px; cursor: pointer; font-weight: 550; white-space: nowrap; flex: none; }
-.btn:hover:not(:disabled) { border-color: #3a4250; }
+/* ---- Buttons ---- */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 1px solid var(--line); background: var(--panel-2); border-radius: 10px; padding: 9px 14px; cursor: pointer; font-weight: 600; white-space: nowrap; flex: none; }
+.btn:hover:not(:disabled) { border-color: var(--line-2); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .btn.primary:hover:not(:disabled) { filter: brightness(1.06); }
 .btn.danger { color: var(--bad); }
+.btn.ghost { background: none; }
+/* Compact, but every target stays at least 32 px high. */
+.btn.small { min-height: 32px; padding: 5px 12px; font-size: 12.5px; border-radius: 9px; }
 .btn.block { width: 100%; padding: 12px; }
 .row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.actions { display: flex; gap: 8px; margin-top: 14px; flex-wrap: wrap; }
-.sync-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 14px; }
+.actions { display: flex; gap: 8px; margin-top: 16px; flex-wrap: wrap; }
 
-.list { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; }
-.list-item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; }
-.list-item + .list-item { border-top: 1px solid var(--line); }
-.list-item.compact { padding: 9px 14px; }
-.list-item .btn { padding: 6px 10px; font-size: 13px; }
+/* ---- Grouped lists (settings, phones, setup): rows separated by inset hairlines ---- */
+.list { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+.list-item { position: relative; display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 14px; min-height: 50px; }
+.list-item + .list-item::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.list-item.compact { padding: 8px 14px; min-height: 40px; }
+.item-title { font-size: 14px; }
+.item-sub { color: var(--muted); font-size: 12.5px; margin-top: 1px; }
+.list-item.action { width: 100%; min-height: 42px; padding: 8px 14px; border: 0; background: none; text-align: left; cursor: pointer; font-size: 14px; }
+.list-item.action:hover { background: var(--panel-2); }
+.list-item.action:focus-visible { outline-offset: -2px; border-radius: 14px; }
+.list-item.danger { color: var(--bad); font-weight: 550; }
+.chevron { color: var(--muted); font-size: 18px; line-height: 1; }
+.how .list-item { justify-content: flex-start; align-items: flex-start; }
+.how-icon { width: 20px; height: 20px; flex: none; margin-top: 2px; fill: none; stroke: var(--muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.phone-icon { width: 22px; height: 22px; flex: none; fill: none; stroke: var(--muted); stroke-width: 1.6; stroke-linecap: round; }
+/* Key for the elapsed mark: a small bar with its tick. */
+/* Wraps at larger text; the picture stays with the first line. */
+.legend { display: flex; align-items: flex-start; gap: 7px; margin: 2px 2px 7px; line-height: 1.3; color: var(--muted); font-size: 12px; }
+/* Another window running low or at its limit: one muted line; the tone (and ▲) only on the percentage. */
+.summary-also { grid-area: also; margin-top: 4px; padding-top: 4px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12.5px; }
+.summary-also .pace { text-align: left; font-size: inherit; }
+/* "+N more": a link-style button; the 32 px target comes from padding and an equal negative margin, so the line keeps its height. */
+.also-more { appearance: none; border: 0; background: none; color: inherit; font: inherit; line-height: 1.3; padding: 8px 6px; margin: -8px -6px; border-radius: 6px; text-decoration: underline; text-underline-offset: 2px; text-decoration-color: var(--line-2); cursor: pointer; }
+.also-more:hover { color: var(--text); }
+.also-more:focus-visible { outline-offset: -4px; }
+/* The card "+N more" scrolls to: outlined for a moment. */
+.card { transition: box-shadow .4s; scroll-margin-top: 8px; }
+.card.flash { box-shadow: 0 0 0 2px var(--warn); }
+/* Inside the headline card: below a hairline, at its bottom. */
+.summary .legend { grid-area: key; margin: 2px 0 0; padding-top: 6px; border-top: 1px solid var(--line); }
+/* Under an "Also at risk" line the key shares its footer: one hairline for both. */
+.summary .summary-also + .legend { margin-top: 4px; padding-top: 0; border-top: 0; }
+/* No single orphaned word on the second line. */
+.legend .grow, .key-row .item-title { text-wrap: pretty; }
+/* Secondary text never leaves a single word on its last line ("tray" at 125 %). */
+p, .item-sub, .item-title, .muted, .quota-reset, .summary-verdict { text-wrap: pretty; }
+.legend .legend-bar { margin-top: 11px; }
+/* The "Got it" pill is 24 px tall: the key's first line (15.6 px) is centred on it, not on the row's top edge. */
+.legend .grow { margin-top: 4px; }
+/* "Got it": a compact tonal pill (as on Android): 24 px tall inside a 32 x 44 px target, the row is as tall as the pill, so the pill sits at the card's inset and only the invisible target reaches 4 px past it. */
+.btn.pill { position: relative; isolation: isolate; min-height: 32px; min-width: 44px; padding: 0 12px; border: 0; border-radius: 99px; background: none; color: var(--text); font-size: 12px; font-weight: 600; }
+.btn.pill::before { content: ""; position: absolute; inset: 4px 0; z-index: -1; border-radius: 99px; background: var(--tonal); }
+.btn.pill:hover:not(:disabled)::before { filter: brightness(1.15); }
+.legend .key-dismiss { flex: none; margin: -4px 0 -4px 6px; }
+.key-row { justify-content: flex-start; align-items: flex-start; }
+.key-row .legend-bar { margin: 9px 2px 0; }
+/* The key's picture: a thin line with the taller tick, as on the bars; nothing about it looks like a control. */
+.legend-bar { position: relative; flex: none; width: 24px; height: 2px; background: var(--line-2); }
+.legend-bar i { position: absolute; top: -4px; bottom: -4px; left: 50%; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--muted); }
+.legend-bar.large { width: 32px; }
+.gap-lg { margin-top: 22px; }
 
-.switch { position: relative; width: 40px; height: 24px; flex: none; }
-.switch input { position: absolute; inset: 0; opacity: 0; margin: 0; cursor: pointer; }
-.switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line); transition: background .15s; pointer-events: none; }
-.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
+.switch { position: relative; width: 44px; height: 26px; flex: none; }
+/* The hit area reaches past the drawn track: at least 56 x 44 px. */
+.switch input { position: absolute; inset: -9px -6px; width: auto; height: auto; opacity: 0; margin: 0; cursor: pointer; z-index: 1; }
+.switch span { position: absolute; inset: 0; border-radius: 99px; background: var(--panel-2); border: 1px solid var(--line-2); transition: background .15s; pointer-events: none; }
+.switch span::after { content: ""; position: absolute; top: 3px; left: 3px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted); transition: transform .15s, background .15s; }
 .switch input:checked + span { background: var(--accent); border-color: var(--accent); }
-.switch input:checked + span::after { transform: translateX(16px); background: var(--accent-ink); }
+.switch input:checked + span::after { transform: translateX(18px); background: var(--accent-ink); }
 .switch input:focus-visible + span { outline: 2px solid var(--accent); outline-offset: 2px; }
 .segmented { display: flex; flex: none; padding: 2px; border-radius: 10px; background: var(--panel-2); border: 1px solid var(--line); }
-.segmented button { border: 0; background: none; padding: 5px 10px; border-radius: 8px; color: var(--muted); font-size: 13px; font-weight: 550; cursor: pointer; }
+.segmented button { min-height: 32px; border: 0; background: none; padding: 4px 11px; border-radius: 8px; color: var(--muted); font-size: 12.5px; font-weight: 600; cursor: pointer; }
+.segmented button:hover:not(.on) { color: var(--text); }
 .segmented button.on { background: var(--accent); color: var(--accent-ink); }
-.select { flex: none; padding: 6px 28px 6px 10px; border-radius: 10px; border: 1px solid var(--line); background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa3b2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center; color: inherit; font: inherit; font-size: 13px; font-weight: 550; cursor: pointer; appearance: none; }
-.select:hover { border-color: #3a4250; }
+.select { flex: none; min-height: 32px; padding: 5px 28px 5px 10px; border-radius: 9px; border: 1px solid var(--line); background: var(--panel-2) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' fill='none' stroke='%239aa3b2' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat right 10px center; color: inherit; font-size: 12.5px; font-weight: 600; cursor: pointer; appearance: none; }
+.select:hover { border-color: var(--line-2); }
 .select:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
-.notice { border: 1px solid #4a3d1c; background: #221d10; border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
-.qr { display: block; margin: 6px auto 12px; width: 240px; height: 240px; border-radius: 16px; background: #fff; }
+.notice { border: 1px solid var(--notice-line); background: var(--notice-bg); border-radius: 14px; padding: 12px 14px; margin-bottom: 10px; }
+.notice p { margin-bottom: 10px; }
+.qr { display: block; margin: 2px auto 12px; width: 200px; height: 200px; border-radius: 14px; background: #fff; }
 .center { text-align: center; }
+.card.center { padding: 18px 16px; }
+.card.center p { margin-bottom: 8px; }
+.card.center .btn { margin-top: 6px; }
+.card > .lead { margin-bottom: 14px; }
 .countdown { font-variant-numeric: tabular-nums; }
 .success { color: var(--ok); font-weight: 600; }
 
-.steps { display: flex; gap: 6px; margin-bottom: 18px; }
+/* ---- Setup wizard ---- */
+main.setup { display: flex; flex-direction: column; padding: 18px 20px 0; }
+/* Each step sits a little above the middle of the space over the footer (optical centre), the progress stays on top. */
+/* Each step starts at the same height, so the mark and heading do not jump between steps. */
+.setup-body { margin: 0 0 auto; padding: 56px 0 32px; }
+/* Like the tab bar elsewhere: a footer with the wizard's action, pinned to the bottom of the window. */
+main.setup > .actions { position: sticky; bottom: 0; margin: 0 -20px; padding: 14px 20px 16px; border-top: 1px solid var(--line); background: var(--panel); }
+.steps { display: flex; gap: 6px; margin: 0; }
+/* The setup steps: the symbol, the step, a larger heading and intro, vertically centred above the footer. */
+.symbol-mark { display: block; width: 48px; height: 56px; margin: 0 0 18px; fill: var(--brand); }
+.step-of { color: var(--link); font-size: 12px; font-weight: 600; letter-spacing: .02em; margin: 0 0 6px; }
+.setup-body h1 { font-size: 24px; margin-bottom: 8px; }
+.setup-body h1 + .lead { font-size: 15px; line-height: 1.5; margin-bottom: 22px; }
 .steps i { flex: 1; height: 3px; border-radius: 99px; background: var(--panel-2); }
 .steps i.done { background: var(--accent); }
-.check { display: flex; gap: 10px; align-items: flex-start; padding: 10px 14px; }
-.check + .check { border-top: 1px solid var(--line); }
-.check .icon { width: 18px; flex: none; text-align: center; font-weight: 700; }
+.check { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 11px 14px; }
+.check + .check::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
+.check .icon { width: 20px; height: 20px; flex: none; display: grid; place-items: center; border-radius: 50%; font-size: 12px; font-weight: 700; background: var(--panel-2); margin-top: 1px; }
 .check .icon.ok { color: var(--ok); } .check .icon.no { color: var(--muted); } .check .icon.warn { color: var(--warn); }
-.option { display: flex; gap: 10px; align-items: flex-start; padding: 12px 14px; cursor: pointer; }
-.option + .option { border-top: 1px solid var(--line); }
+.option { position: relative; display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; cursor: pointer; }
+.option + .option::before { content: ""; position: absolute; top: 0; left: 14px; right: 0; height: 1px; background: var(--line); }
 .option input[type=radio] { margin-top: 3px; accent-color: var(--accent); }
 .field { width: 100%; margin-top: 8px; padding: 9px 11px; border-radius: 9px; border: 1px solid var(--line); background: var(--ink); user-select: text; }
 .spinner { width: 14px; height: 14px; border-radius: 50%; border: 2px solid var(--line); border-top-color: var(--accent); animation: spin .8s linear infinite; display: inline-block; vertical-align: -2px; }
@@ -113,7 +255,17 @@ p { margin: 0 0 10px; }
 .empty { text-align: center; padding: 40px 12px; color: var(--muted); }
 .gap { margin-top: 12px; }
 .grow { flex: 1; min-width: 0; }
+/* A section heading with an action on the right ("Remove all"). */
+.section-head { display: flex; align-items: baseline; justify-content: space-between; margin: 22px 14px 7px; }
+.section-head h2 { margin: 0; }
+.danger-link { color: var(--bad); font-size: 12.5px; font-weight: 600; }
+.nowrap { white-space: nowrap; }
 .selectable { user-select: text; overflow-wrap: anywhere; }
 ::-webkit-scrollbar { width: 10px; }
 ::-webkit-scrollbar-thumb { background: var(--line); border-radius: 99px; border: 3px solid var(--ink); }
 ::-webkit-scrollbar-track { background: transparent; }
+
+/* Reduced motion: nothing moves; a busy state still says "Syncing…" or "Registering…" in words next to the spinner. */
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { transition: none !important; animation: none !important; }
+}

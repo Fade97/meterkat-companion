@@ -9,13 +9,13 @@ import type { Snapshot } from "../../shared/snapshot.js";
 import { isAiWindow } from "./ai-apps.js";
 import { linuxProbe, nextTone, threadedProbe, unsupportedReason, windowsPrimaryButton, windowsProbe, x11Pointer, type ForegroundProbe, type ForegroundReading, type KoffiModule, type Point, type Rect, type ScreenCapture } from "./foreground.js";
 import { dequeue, enqueue, IslandTracker, type IslandEvent } from "./island-events.js";
-import type { BarMode } from "./format.js";
-import { hits, islandEdge, missedClicks, oneClick, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
+import { WINDOW_MS, type BarMode } from "./format.js";
+import { hits, islandEdge, ISLAND_WINDOW_WIDTH, missedClicks, oneClick, PANEL_MAX_HEIGHT, samplePoints, type HitArea, type IslandAnchor, type IslandEdge } from "./island-shape.js";
 import { windowEventStream, type WindowEvent } from "./window-events.js";
 import { ISLAND_CHANNEL, ISLAND_HIT_CHANNEL, ISLAND_TOGGLE_CHANNEL, type IslandShown, type IslandTone, type IslandUpdate } from "./ipc.js";
 
 /** Tall enough for the open panel; everything outside the drop lets the pointer through. */
-export const ISLAND_WINDOW = { width: 440, height: PANEL_MAX_HEIGHT + 24 };
+export const ISLAND_WINDOW = { width: ISLAND_WINDOW_WIDTH, height: PANEL_MAX_HEIGHT + 24 };
 /** How often the pointer is checked while the island is on screen; until then a press on arrival goes to the window below. */
 const POINTER_MS = 25;
 /** The panel closes once the pointer has been off it this long. */
@@ -237,10 +237,10 @@ export function createIsland(options: IslandOptions) {
     if (now < eventsAt) return [];
     const base = { at: now, expiresAt: now + 60_000 };
     const samples: IslandEvent[] = [
-      { ...base, key: "claude:5-hour", provider: "claude", label: "5-hour", kind: "usage", from: 41, to: 63 },
+      { ...base, key: "claude:5-hour", provider: "claude", label: "5-hour", kind: "usage", from: 41, to: 63, resetsAt: now + 2 * 3_600_000, windowMs: WINDOW_MS.fiveHour },
       { ...base, key: "codex:5-hour", provider: "codex", label: "5-hour", kind: "reset-soon", resetsAt: now + 10 * 60_000, usedPercent: 92 },
       { ...base, key: "claude:Weekly", provider: "claude", label: "Weekly", kind: "reset-done" },
-      { ...base, key: "antigravity:Gemini Pro", provider: "antigravity", label: "Gemini Pro", kind: "usage", from: 12, to: 47 },
+      { ...base, key: "antigravity:Gemini Pro", provider: "antigravity", label: "Gemini Pro", kind: "usage", from: 12, to: 47, resetsAt: now + 3 * 3_600_000 },
     ];
     const event = samples[demoStep % samples.length]!;
     if (demoStep % 2 === 0 && demoStep > 0) tone = tone === "ink" ? "white" : "ink";

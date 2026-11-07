@@ -4,16 +4,20 @@ body.hover { cursor: pointer; }
 body {
   font: 600 13px/1 "Segoe UI Variable Text", "Segoe UI", system-ui, -apple-system, Ubuntu, sans-serif;
   -webkit-font-smoothing: antialiased; user-select: none; cursor: default;
-  --island: #101318; --fg: #ffffff; --logo: #f5c451; --track: rgba(255, 255, 255, .16); --muted: rgba(255, 255, 255, .6);
+  --island: #101318; --fg: #ffffff; --logo: #f5c451; --track: rgba(255, 255, 255, .16); --muted: rgba(255, 255, 255, .62);
+  --line: rgba(255, 255, 255, .1); --tint: rgba(255, 255, 255, .05); --warn: #f2b35e; --bad: #f07575;
   --ease-out: cubic-bezier(.2, .8, .2, 1);
 }
 /* Approved brand pairs: sand mark on ink, ink mark on white (docs/brand.md). */
-body.white { --island: #ffffff; --fg: #101318; --logo: #101318; --track: rgba(16, 19, 24, .12); --muted: rgba(16, 19, 24, .55); }
+body.white { --island: #ffffff; --fg: #101318; --logo: #101318; --track: rgba(16, 19, 24, .12); --muted: rgba(16, 19, 24, .74);
+  --line: rgba(16, 19, 24, .1); --tint: rgba(16, 19, 24, .045); --warn: #9a5800; --bad: #c62828; }
 
 .shape { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .shape path { fill: var(--island); transition: fill .45s ease; }
 body.white .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .22)); }
 body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
+/* On a dark desktop the ink drop would melt into it: a faint light edge keeps its outline. */
+body.ink .shape path { stroke: rgba(255, 255, 255, .1); stroke-width: 1; }
 
 .box { position: absolute; color: var(--fg); transition: color .45s ease; }
 .box > * { position: absolute; top: 50%; opacity: 0; pointer-events: none; }
@@ -30,7 +34,13 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
 
 /* Staggered entrance: each child slides and sharpens in after the pill has opened. */
 .usage, .notice { left: 0; right: 0; display: flex; align-items: center; transform: translateY(-50%); }
-.usage { gap: 11px; padding: 0 17px; }
+.usage { gap: 10px; padding: 0 18px 0 16px; flex-wrap: wrap; row-gap: 5px; }
+/* The warning pill's second line, under the name and bar: the verdict in its colour, then the reset. */
+.usage .line2 { display: none; flex-basis: 100%; padding-left: 30px; font-size: 12px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+.usage.two .line2 { display: block; animation: appear .3s ease; }
+.line2 .verdict { color: var(--warn); font-weight: 600; }
+.usage.bad .line2 .verdict { color: var(--bad); }
+@keyframes appear { from { opacity: 0; } }
 .notice { gap: 9px; padding: 0 15px 0 9px; width: max-content; }
 .usage > *, .notice > * { opacity: 0; transform: translateX(-6px) scale(.96); filter: blur(3px);
   transition: opacity .14s ease, transform .14s ease, filter .14s ease; }
@@ -39,14 +49,38 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
 .on > :nth-child(1) { transition-delay: .17s; }
 .on > :nth-child(2) { transition-delay: .23s; }
 .on > :nth-child(3) { transition-delay: .29s; }
+.on > :nth-child(4) { transition-delay: .35s; }
 
 .glyph { width: 20px; height: 20px; flex: none; fill: var(--provider); }
-.bar { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--track); overflow: hidden; }
+.bar { position: relative; flex: 1; height: 8px; border-radius: 4px; background: var(--track); }
 .bar .fill { position: absolute; inset: 0 auto 0 0; width: 0; border-radius: 4px; background: var(--provider); }
 .bar .fill.landed { animation: glow .9s ease-out; }
 @keyframes glow { 0% { filter: brightness(1.6) saturate(1.2); } 100% { filter: none; } }
-.bar .was { position: absolute; top: 0; bottom: 0; width: 2px; margin-left: -1px; background: var(--fg); opacity: .45; }
-.pct { min-width: 44px; text-align: right; font-size: 16px; font-weight: 700; font-variant-numeric: tabular-nums; letter-spacing: -.01em; }
+/* The jump since the last announcement, lighter on top of the bar; it fades once the bar has landed. */
+.bar .gain { position: absolute; top: 0; bottom: 0; border-radius: 4px; background: #fff; opacity: .32; transition: opacity 1.4s ease .5s; }
+body.white .bar .gain { opacity: .5; }
+.bar .gain.fade { opacity: 0; }
+/* How much of the window has passed, as on every other bar. */
+.bar .tick { position: absolute; top: -3px; bottom: -3px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); box-shadow: 0 0 0 1.5px var(--island); }
+.bar .tick[hidden], .pct .alert[hidden] { display: none; }
+.pct .alert { color: var(--warn); font-size: 12px; vertical-align: 1px; }
+.usage.warn .pct .num { color: var(--warn); }
+.usage.bad .pct .num { color: var(--bad); }
+/* Which window: "5h", "Wk" or a bucket name. */
+.win { max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing: .01em; }
+.pct, .value { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pct { min-width: 78px; text-align: right; }
+.pct .num { font-size: 16px; font-weight: 700; letter-spacing: -.01em; }
+.unit { color: var(--muted); font-size: 12px; font-weight: 500; }
+/* After landing, a warning adds its verdict after the unit ("· Runs out in 2h 4m"), sliding open as the pill widens. */
+.say { display: inline-block; vertical-align: bottom; max-width: 0; overflow: hidden; opacity: 0; font-size: 12px; font-weight: 600; color: var(--warn);
+  transition: max-width .45s var(--ease-out), opacity .3s ease .1s; }
+.say.in { max-width: 170px; opacity: 1; }
+.say.calm { color: var(--muted); font-weight: 500; }
+/* A separator only: no text for screen readers. */
+.say::before { content: "\00a0·\00a0" / ""; color: var(--muted); font-weight: 500; }
+.vh { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.usage.bad .say { color: var(--bad); }
 
 .badge { position: relative; width: 24px; height: 24px; flex: none; }
 .badge .glyph { position: absolute; inset: 5px; width: 14px; height: 14px; transition: opacity .25s ease, transform .35s var(--ease-out); }
@@ -61,34 +95,100 @@ body.ink .shape { filter: drop-shadow(0 2px 6px rgba(0, 0, 0, .12)); }
 .notice.urgent.on .ring { animation: urgent 1.1s ease-in-out .6s 2; }
 @keyframes urgent { 50% { transform: rotate(-90deg) scale(1.14); } }
 .text { white-space: nowrap; }
-.value { color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; }
+.value .num { font-weight: 700; }
+.notice .value::before { content: "·" / ""; color: var(--muted); font-weight: 500; margin-right: 8px; }
 
 /* The panel: every provider at a glance. Laid out at full width from the start, so its height can be measured. */
-.panel { top: 0; left: 50%; width: 380px; max-height: 520px; margin-left: -190px; padding: 13px 18px 15px; box-sizing: border-box; transform: none;
-  transition: opacity .12s ease; overflow: hidden; }
+.panel { top: 0; left: 50%; width: 400px; max-height: 640px; margin-left: -200px; padding: 13px 18px 15px; box-sizing: border-box; transform: none;
+  transition: opacity .12s ease; overflow: hidden; display: flex; flex-direction: column; }
+.panel-head { flex: none; }
+/* More providers than fit: the list scrolls under the fixed head (the window takes the wheel while the pointer is on
+   it). Its quiet scrollbar sits in the panel's right padding, so the rows keep their width. */
+/* The left padding (8 px, pulled back by the margin) is the room the highlighted rows bleed into: overflow-y makes overflow-x clip too. */
+.plist { flex: 0 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0 -12px 0 -8px; padding: 0 12px 0 8px; }
+.plist::-webkit-scrollbar { width: 6px; }
+.plist::-webkit-scrollbar-thumb { background: var(--track); border-radius: 3px; }
+.plist::-webkit-scrollbar-track { background: transparent; }
+.plist.faded { mask-image: linear-gradient(#000 calc(100% - 28px), transparent); }
+/* The cue looks like a small pill but takes the pointer in a 32 px tall box; it sits in the room the list leaves free. */
+.more { position: absolute; left: 0; right: 0; bottom: 5px; width: max-content; min-width: 32px; height: 32px; margin: 0 auto; padding: 0 10px;
+  display: flex; align-items: center; justify-content: center; isolation: isolate; font-size: 12px; font-weight: 600; color: var(--muted); cursor: pointer; }
+.more::before { content: ""; position: absolute; inset: 6px 0; z-index: -1; border-radius: 99px; background: var(--island); box-shadow: 0 0 0 1px var(--line); }
+.more.warn { color: var(--warn); }
+.more[hidden] { display: none; }
+.panel.overflowing { padding-bottom: 42px; }
 .panel.on { opacity: 1; transition: opacity .22s ease .16s; }
 .panel > * { transform: translateY(-4px); transition: transform .12s ease; }
 .panel.on > * { transform: none; transition: transform .45s var(--ease-out) .16s; }
-.panel-head { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
-.panel-head .mark { width: 12px; height: 14px; flex: none; fill: var(--logo); transition: fill .45s ease; }
-.panel-head .title { font-size: 13px; }
+.panel-head { padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.panel-top { display: flex; align-items: center; gap: 8px; }
+/* The tightest quota in two lines under the brand row, as the window's headline: why, provider and window, the number on the right; then the detail. */
+.summary { margin: 11px 0 0; font-size: 12px; white-space: nowrap; }
+.summary .line1 { display: flex; align-items: baseline; }
+.summary .reason { flex: none; color: var(--muted); font-weight: 600; }  /* line 1 is one weight, the provider glyph sits on the highlighted row below */
+.summary .reason.fast, .summary .reason.low { color: var(--warn); }
+.summary .reason.limit { color: var(--bad); }
+.summary .sep { flex: none; color: var(--muted); white-space: pre; }
+.summary .title { display: inline-flex; min-width: 0; font-weight: 600; color: var(--fg); }
+.summary .title .t { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.summary .pglyph { width: 12px; height: 12px; flex: none; fill: var(--provider); }
+.summary .num { flex: none; margin-left: auto; padding-left: 10px; color: var(--muted); font-weight: 500; }
+.summary .num b { font-size: 18px; letter-spacing: -0.01em; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+.summary.warn .num b { color: var(--warn); }
+.summary.bad .num b { color: var(--bad); }
+.summary.old .num b { color: var(--muted); }
+.summary .line2 { display: flex; margin-top: 3px; font-weight: 500; }
+.summary .lead { flex: none; font-weight: 600; }
+.summary .lead.ok, .summary .lead.tight { color: var(--muted); font-weight: 500; }
+.summary .lead.fast, .summary .lead.low { color: var(--warn); }
+.summary .lead.limit { color: var(--bad); }
+.summary .rest { min-width: 0; color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.nowrap { white-space: nowrap; }
+/* The headline's own row and the "Also at risk" rows stand out in the list: a tint that bleeds 8 px into the gutter on both sides while label, number and bar keep the x and width of every other row (aligned bars read as data), and a warning edge on every at-risk row: low, at its limit or forecast to run out (the lead row too when it is). */
+.meter-row.lead, .meter-row.also { margin: 6px -8px 0; padding: 4px 8px 4px; border-radius: 9px; background: var(--tint); }
+.meter-row.also, .meter-row.edge { box-shadow: inset 2px 0 0 var(--warn); }
+.meter-row.also.limit, .meter-row.edge.limit { box-shadow: inset 2px 0 0 var(--bad); }
+/* The lockup: sand symbol and white wordmark on ink, both ink on white (docs/brand.md); 18 px tall is 122 px wide. */
+.panel-head .lockup { height: 18px; width: auto; flex: none; }
+.lockup .symbol { fill: var(--logo); transition: fill .45s ease; }
+.lockup .word { fill: var(--fg); transition: fill .45s ease; }
 .panel-head .meta, .panel .muted { color: var(--muted); font-weight: 500; }
-.panel-head .meta { margin-left: auto; font-size: 11.5px; }
-.prov { margin-top: 10px; }
+.panel-head .meta { margin-left: auto; font-size: 12px; }
+.panel-head .meta.warn { color: var(--warn); }
+/* Providers are separated by a hairline; every row is label and number, the bar with its elapsed tick, reset and pace. */
+.prov { margin-top: 12px; }
+.prov + .prov { border-top: 1px solid var(--line); padding-top: 16px; margin-top: 18px; }
 .prov-head { display: flex; align-items: center; gap: 7px; font-size: 13px; }
 .prov-head .pglyph { width: 15px; height: 15px; flex: none; fill: var(--provider); }
-.prov-head .state { margin-left: auto; font-size: 11.5px; color: var(--muted); font-weight: 500; }
-.meter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: baseline; column-gap: 8px; row-gap: 4px; margin-top: 7px; }
+.prov-head .tags { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+.prov-head .state { font-size: 12px; color: var(--muted); font-weight: 500; }
+/* Stale and sign-in needed: the same chips as in the window. */
+.chip { font-size: 12px; font-weight: 600; padding: 1px 8px; border-radius: 99px; background: var(--tint); color: var(--muted); white-space: nowrap; }
+.chip.warn { color: var(--warn); background: rgba(242, 179, 94, .14); }
+body.white .chip.warn { background: rgba(154, 88, 0, .1); }
+.meter-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; column-gap: 10px; margin-top: 10px; }
 .meter-row .label { font-size: 12px; color: var(--muted); font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.meter-row .reset { font-size: 11.5px; color: var(--muted); font-weight: 500; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.meter-row .num { min-width: 34px; text-align: right; font-size: 13px; font-weight: 700; font-variant-numeric: tabular-nums; }
-.meter { grid-column: 1 / -1; position: relative; height: 6px; border-radius: 3px; background: var(--track); overflow: hidden; }
+.meter-row .num { justify-self: end; font-size: 12px; color: var(--muted); font-weight: 500; white-space: nowrap; }
+.meter-row .num b { font-size: 14px; font-weight: 700; color: var(--fg); font-variant-numeric: tabular-nums; }
+.meter-row.warn .num b { color: var(--warn); }
+.meter-row.bad .num b { color: var(--bad); }
+.meter { grid-column: 1 / -1; position: relative; height: 4px; margin: 5px 0 9px; border-radius: 3px; background: var(--track); }
 .meter i { position: absolute; inset: 0 auto 0 0; border-radius: 3px; background: var(--provider); }
+.meter-row.old .meter i { opacity: .5; }
+.meter u { position: absolute; top: -2.5px; bottom: -2.5px; width: 2px; margin-left: -1px; border-radius: 1px; background: var(--fg); box-shadow: 0 0 0 1.5px var(--island); }
+.meter-row .reset, .meter-row .pace { font-size: 12px; font-weight: 500; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.meter-row .reset { color: var(--muted); overflow: hidden; text-overflow: ellipsis; min-width: 0; }
+.meter-row .pace { text-align: right; color: var(--muted); }
+.meter-row .pace.seen { font-weight: 500; }
+.meter-row .pace.fast, .meter-row .pace.low { color: var(--warn); font-weight: 600; }
+.meter-row .pace.limit { color: var(--bad); font-weight: 600; }
 .panel .note { margin-top: 10px; font-size: 12px; }
 
+/* Reduced motion: the shape jumps (island.ts), values show at once, content appears without fades or slides. */
 @media (prefers-reduced-motion: reduce) {
-  .panel > *, .panel.on > * { transform: none !important; transition: none !important; }
-  .usage > *, .notice > *, .on > * { filter: none !important; transform: none !important; transition-delay: 0s !important; }
+  .usage > *, .notice > *, .on > *, .panel > *, .panel.on > *, .panel, .panel.on, .logo, .logo.on, .say, .unit, .bar .gain,
+  .ring .arc, .ring .check, .badge .glyph, .box, .shape path { transition: none !important; }
+  .usage > *, .notice > *, .on > *, .panel > * { filter: none !important; transform: none !important; }
   .logo, .logo.on { transform: translate(-50%, -50%); }
-  .bar .fill.landed, .notice.urgent.on .ring, .logo.blink path { animation: none; }
+  .bar .fill.landed, .notice.urgent.on .ring, .logo.blink path, .usage.two .line2 { animation: none; }
 }

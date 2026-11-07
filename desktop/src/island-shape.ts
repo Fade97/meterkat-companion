@@ -38,7 +38,7 @@ export function islandPath({ cx, top, w, h, fillet, radius }: IslandGeometry): s
 /** Width the island occupies at the screen edge, arcs included. */
 export const islandFootprint = ({ w, h, fillet, radius }: IslandGeometry) => Math.max(w, 2 * Math.min(radius ?? h / 2, h / 2)) + 2 * Math.max(fillet, 0);
 
-export type IslandShapeKind = "hidden" | "idle" | "hover" | "usage" | "notice" | "panel";
+export type IslandShapeKind = "hidden" | "idle" | "hover" | "usage" | "verdict" | "warning" | "notice" | "panel";
 /**
  * Sizes in DIP. Gap 2 px and arc width 15 px were chosen in the mock-up (ai-usage-app #61). The panel's height
  * follows its content (at most PANEL_MAX_HEIGHT); `h` here is only its starting value.
@@ -47,12 +47,18 @@ export const ISLAND_SIZES: Record<IslandShapeKind, { w: number; h: number; fille
   hidden: { w: 0, h: 0, fillet: 0, top: 0 },
   idle: { w: 30, h: 30, fillet: 15, top: 2 },
   hover: { w: 34, h: 34, fillet: 16, top: 2 },
-  usage: { w: 300, h: 50, fillet: 19, top: 2 },
+  usage: { w: 380, h: 50, fillet: 19, top: 2 },
+  /** The calm usage pill once it adds the reset ("45% used · resets in 2h 10m"): the widest shape. */
+  verdict: { w: 490, h: 50, fillet: 19, top: 2 },
+  /** The warning usage pill: a second line with the verdict and the reset. */
+  warning: { w: 420, h: 68, fillet: 19, top: 2, radius: 24 },
   notice: { w: 236, h: 36, fillet: 16, top: 2 },
-  panel: { w: 380, h: 120, fillet: 19, top: 2, radius: 22 },
+  panel: { w: 400, h: 120, fillet: 19, top: 2, radius: 22 },
 };
+/** Width of the island's window: the widest shape's footprint plus room for its shadow. */
+export const ISLAND_WINDOW_WIDTH = 540;
 /** Also the panel's max-height in island.css. */
-export const PANEL_MAX_HEIGHT = 520;
+export const PANEL_MAX_HEIGHT = 640;
 
 /** A rectangle in window coordinates (DIP) where the island takes the pointer. */
 export type HitArea = { x: number; y: number; width: number; height: number };
@@ -116,6 +122,6 @@ export function islandEdge(anchor: IslandAnchor, display: Box, window: Box | nul
 
 /** Screen points (DIP) left and right of the widest shape, just below the edge the island hangs from. */
 export function samplePoints(edge: IslandEdge): { x: number; y: number }[] {
-  const half = islandFootprint({ cx: 0, ...ISLAND_SIZES.panel }) / 2;
+  const half = Math.max(...Object.values(ISLAND_SIZES).map(size => islandFootprint({ cx: 0, ...size }))) / 2;
   return [half + 24, half + 90].flatMap(dx => [3, 14].flatMap(dy => [{ x: edge.cx - dx, y: edge.y + dy }, { x: edge.cx + dx, y: edge.y + dy }]));
 }
