@@ -3,11 +3,12 @@
 import type { Snapshot } from "../../shared/snapshot.js";
 import type { ProviderCheck } from "../../src/setup.js";
 import type { UpdateChannel } from "../../src/update.js";
+import type { WindowForecast } from "../../src/history.js";
 import type { BarMode } from "./format.js";
 import type { IslandEvent } from "./island-events.js";
 import type { HitArea, IslandAnchor } from "./island-shape.js";
 
-export type { BarMode, HitArea, IslandAnchor, ProviderCheck, Snapshot, UpdateChannel };
+export type { BarMode, HitArea, IslandAnchor, ProviderCheck, Snapshot, UpdateChannel, WindowForecast };
 /** "service": a CLI companion (systemd unit or Windows background process) already syncs; the app only shows its data. */
 export type SyncMode = "app" | "service";
 export type AppState = {
@@ -36,7 +37,7 @@ export type AppState = {
 };
 export type Pairing = { qr: string; expiresAt: number };
 export type Device = { id: string; pairedAt: number };
-export type View = "overview" | "phones" | "settings";
+export type View = "overview" | "forecast" | "phones" | "settings";
 export type ExternalLink = "releases" | "terms" | "privacy" | "source" | "licenses";
 
 export interface MeterkatApi {
@@ -47,6 +48,8 @@ export interface MeterkatApi {
   /** null registers with the default (hosted) relay. */
   register(relay: string | null): Promise<void>;
   syncNow(): Promise<void>;
+  /** Forecasts of the current quota windows from this computer's history; computed in the main process. */
+  forecast(): Promise<WindowForecast[]>;
   startPairing(): Promise<Pairing>;
   stopPairing(): Promise<void>;
   devices(): Promise<Device[]>;
@@ -74,7 +77,7 @@ export interface MeterkatApi {
 
 export const CHANNEL = {
   state: "meterkat:state", stateChanged: "meterkat:state-changed", navigate: "meterkat:navigate",
-  detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync",
+  detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync", forecast: "meterkat:forecast",
   startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
   autostart: "meterkat:autostart", island: "meterkat:island-enabled", islandAnchor: "meterkat:island-anchor", barMode: "meterkat:bar-mode", dismissKey: "meterkat:dismiss-key", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",

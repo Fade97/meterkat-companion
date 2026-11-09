@@ -1,6 +1,7 @@
 // Formatting shared by the window and the tray menu; pure, so it is unit-tested.
 import type { ProviderUsage, Snapshot, WindowUsage } from "../../shared/snapshot.js";
 import { PROVIDER_GLYPHS } from "./provider-glyphs.js";
+import type { Forecast, UsageSample } from "../../src/forecast.js";
 
 const NAMES: Record<string, string> = { claude: "Claude", codex: "Codex", antigravity: "Antigravity" };
 export const providerName = (id: string) => NAMES[id] ?? id.charAt(0).toUpperCase() + id.slice(1);
@@ -356,4 +357,48 @@ export function trayLines(snapshot: Snapshot | null, mode: BarMode = "used", now
     if (highest === null) return `${providerName(p.id)}: ${bars(p).length ? "updating" : "no data"}`;
     return `${providerName(p.id)} · ${highest.label}: ${percent(shownPercent(highest.usedPercent, mode))} ${unitWord(mode)}${fresh(p) ? "" : " (stale)"}`;
   }), ...notSetUp.map(id => `${providerName(id)}: not set up`)];
+}
+
+// ---- Forecast from this computer's history (docs/forecast.md, same model as the Android app) --------------------
+
+/** "less than 1 point", "1 point", "4 points". */
+const missed = (points: number) => { const n = Math.round(points); return n === 0 ? "less than 1 point" : `${n} point${n === 1 ? "" : "s"}`; };
+/** What a forecast row says: the number at the reset, the verdict, the likely range and what it is based on. */
+export type ForecastText = { value: number; tone: "bad" | "warn" | ""; verdict: string; range: string | null; basis: string; spoken: string };
+export function forecastText(f: Forecast, mode: BarMode, now = Date.now(), clock: Clock = {}): ForecastText {
+  const at = (t: number) => resetClock(t, now, clock);
+  const shown = (used: number) => percent(shownPercent(used, mode));
+  const out = f.runsOutAt !== null && f.used < 100;
+  const verdict = f.used >= 100 ? "Limit reached" : out ? `Runs out around ${at(f.runsOutAt!)}` : `Expected at the reset · ${at(f.resetsAt)}`;
+  const range = f.used >= 100 ? null
+    : out ? (f.runsOutLatest !== null ? `Likely between ${at(f.runsOutEarliest ?? f.runsOutAt!)} and ${at(f.runsOutLatest)}` : `Earliest ${at(f.runsOutEarliest ?? f.runsOutAt!)}, may last until the reset`)
+    : [`Likely ${shown(mode === "remaining" ? f.high : f.low)} to ${shown(mode === "remaining" ? f.low : f.high)}`, f.runsOutEarliest !== null ? `may run out from ${at(f.runsOutEarliest)}` : ""].filter(Boolean).join(" · ");
+  const span = f.from - f.since, history = span >= 2 * DAY ? `${Math.floor(span / DAY)}d` : `${Math.max(1, Math.floor(span / HOUR))}h`;
+  const basis = !f.learned && f.model.pace ? `Still learning your rhythm (${history} of history so far). Until then this follows the window's pace.`
+    : !f.learned ? `Still learning your rhythm (${history} of history so far): a rough estimate.`
+    : f.model.pace ? "Your history didn't predict this quota better than its average pace so far, so this follows the pace."
+    : `Learned from ${history} of history${f.typicalError === null ? "" : ` · past forecasts missed by ${missed(f.typicalError)} (median of ${f.checks})`}`;
+  const value = shownPercent(f.atReset, mode);
+  return { value, tone: f.used >= 100 ? "bad" : out ? "warn" : "", verdict, range, basis,
+    spoken: [`${percent(value)} ${unitWord(mode)} expected at the reset`, verdict, range ?? ""].filter(Boolean).join(", ") };
+}
+
+/**
+ * The window from its start to its reset as SVG: used so far (solid), the expected path (dashed) inside its likely range
+ * (shaded), the limit (dashed; top for Used, bottom for Left), a hairline at the latest reading and a dot where the expected
+ * path reaches the limit. Colours come from CSS (the CSP allows no style attributes).
+ */
+export function forecastChart(f: Forecast, actual: UsageSample[], windowStart: number | null, mode: BarMode) {
+  const W = 400, H = 100, pad = 4;
+  const start = windowStart ?? Math.min(actual[0]?.at ?? f.from, f.from - (f.resetsAt - f.from) / 4), span = Math.max(1, f.resetsAt - start);
+  const x = (t: number) => (Math.min(1, Math.max(0, (t - start) / span)) * W).toFixed(1);
+  const y = (used: number) => (pad + (H - 2 * pad) * (mode === "remaining" ? used / 100 : 1 - used / 100)).toFixed(1);
+  const line = (points: [number, number][]) => points.map(([t, v], i) => `${i ? "L" : "M"}${x(t)} ${y(v)}`).join(" ");
+  const band = `${line(f.path.map(p => [p.at, p.high]))} ${[...f.path].reverse().map(p => `L${x(p.at)} ${y(p.low)}`).join(" ")} Z`;
+  const dot = f.runsOutAt !== null && f.used < 100 ? `<circle class="fc-out" cx="${x(f.runsOutAt)}" cy="${y(100)}" r="3.5"/>` : "";
+  return `<svg class="fc-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+    <path class="fc-grid" d="M0 ${y(0)} H${W} M0 ${y(50)} H${W}"/><path class="fc-limit" d="M0 ${y(100)} H${W}"/>
+    <path class="fc-band" d="${band}"/><path class="fc-expected" d="${line(f.path.map(p => [p.at, p.expected]))}"/>
+    <path class="fc-actual" d="${line(actual.map(s => [s.at, s.used]))}"/><path class="fc-now" d="M${x(f.from)} ${pad} V${H - pad}"/>${dot}
+  </svg>`;
 }

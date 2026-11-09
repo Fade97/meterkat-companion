@@ -2,6 +2,7 @@ import { readCodexUsage } from "./codex.js";
 import { readClaudeUsage } from "./claude.js";
 import { readAntigravityUsage } from "./antigravity.js";
 import { readState, writeState } from "./state.js";
+import { recordHistory } from "./history.js";
 import { companionName } from "./account.js";
 import { parseSnapshot, unavailable, type ProviderUsage, type Snapshot } from "../shared/snapshot.js";
 
@@ -40,5 +41,8 @@ export async function collect(readers = providerReaders): Promise<Snapshot> {
   const providers = (await Promise.all(readers.map(read))).filter(p => p !== undefined);
   const name = companionName();
   const snapshot = parseSnapshot({ schemaVersion: 1, sequence: (previous?.sequence ?? 0) + 1, generatedAt: Math.max(Date.now(), (previous?.generatedAt ?? 0) + 1), ...(name ? { name } : {}), providers });
-  writeState("snapshot.json", snapshot); return snapshot;
+  writeState("snapshot.json", snapshot);
+  // The forecast's history stays on this computer; a failing write never fails the sync.
+  try { recordHistory(snapshot); } catch { /* next round */ }
+  return snapshot;
 }
