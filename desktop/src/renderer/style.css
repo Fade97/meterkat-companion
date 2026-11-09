@@ -223,6 +223,7 @@ p, .item-sub, .item-title, .muted, .quota-reset, .summary-verdict { text-wrap: p
 .card.center { padding: 18px 16px; }
 .card.center p { margin-bottom: 8px; }
 .card.center .btn { margin-top: 6px; }
+.pair-buttons { display: flex; gap: 8px; justify-content: center; }
 .card > .lead { margin-bottom: 14px; }
 .countdown { font-variant-numeric: tabular-nums; }
 .success { color: var(--ok); font-weight: 600; }

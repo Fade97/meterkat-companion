@@ -22,6 +22,8 @@ let phones: Device[] | null = null;
 let phonesError: string | null = null;
 let connected = false;
 let pairingError: string | null = null;
+/** "Copied" on the copy button for a moment after a click. */
+let linkCopied = false;
 // Setup wizard
 type Step = "tools" | "relay" | "autostart" | "pair";
 let step: Step = "tools";
@@ -200,9 +202,9 @@ function pairingPanel(intro: string) {
   const time = `${Math.floor(left / 60_000)}:${String(Math.floor(left / 1000) % 60).padStart(2, "0")}`;
   return `<section class="card center">
     <img class="qr" src="${esc(pairing.qr)}" alt="Pairing QR code">
-    <p>Scan with the Meterkat app on <strong>your own</strong> phone.</p>
+    <p>Scan with the Meterkat app on <strong>your own</strong> phone, or copy the link and paste it in the app.</p>
     <p class="muted small">The code contains your encryption key: don't share it or take a screenshot. Single use, expires in <span class="countdown" id="countdown">${time}</span>.</p>
-    <button class="btn" data-action="cancel-pair">Cancel</button>
+    <div class="pair-buttons"><button class="btn" data-action="copy-pair">${linkCopied ? "Copied" : "Copy link"}</button><button class="btn" data-action="cancel-pair">Cancel</button></div>
   </section>`;
 }
 
@@ -417,6 +419,10 @@ document.addEventListener("click", event => {
       case "sync": await api.syncNow(); break;
       case "pair": await startPairing(); break;
       case "cancel-pair": pairing = null; await api.stopPairing(); render(); break;
+      case "copy-pair":
+        try { await api.copyPairingLink(); linkCopied = true; render(); setTimeout(() => { linkCopied = false; if (pairing) render(); }, 2000); }
+        catch (error) { pairingError = message(error); pairing = null; render(); }
+        break;
       case "revoke": try { await api.revokeDevice(target.dataset.id!); } catch (error) { phonesError = message(error); } await loadPhones(); break;
       case "revoke-all": try { if (await api.revokeAll()) await loadPhones(); } catch (error) { phonesError = message(error); render(); } break;
       case "take-over": try { await api.takeOver(); } catch (error) { settingsError = message(error); render(); } break;
