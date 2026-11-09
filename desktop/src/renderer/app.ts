@@ -1,11 +1,11 @@
 // The window: setup wizard until the companion is registered, then Overview, Phones and Settings.
 // All data comes through window.meterkat (preload.ts); the page has no Node or network access of its own.
-import { ago, alsoAtRisk, alsoLine, alsoMore, bars, resetText, fresh, headline, level, noPaceHint, paceUnknown, syncProblem, staleLabel, chipLabel, islandAnchorHelp, ISLAND_ANCHORS, staleSummary, headerStatus, headerAge, lowWhenLastSeen, tickHint, tickLegend, tickRead, pace, paceGlyph, paceText, percent, providerColor, providerGroups, providerMark, providerName, resetClock, resetLine, shownPercent, tickPercent, tightest, unitWord, type Bar, type Pace, type Tightest } from "../format.js";
+import { ago, alsoAtRisk, alsoLine, alsoMore, bars, resetText, fresh, headline, level, noPaceHint, paceUnknown, syncProblem, staleLabel, chipLabel, islandAnchorHelp, ISLAND_ANCHORS, staleSummary, headerStatus, headerAge, lowWhenLastSeen, tickHint, tickLegend, tickRead, pace, paceGlyph, paceText, percent, providerColor, providerGroups, providerMark, providerName, resetClock, resetLine, shownPercent, tickPercent, tightest, unitWord, forecastChart, forecastText, type Bar, type Pace, type Tightest } from "../format.js";
 import type { ProviderUsage } from "../../../shared/snapshot.js";
 import { LOCKUP, SYMBOL_MARK } from "../brand-lockup.js";
 import { radioStep } from "../radio-keys.js";
 import { hideDots } from "../hide-dots.js";
-import type { AppState, BarMode, Device, IslandAnchor, MeterkatApi, Pairing, ProviderCheck, UpdateChannel, View } from "../ipc.js";
+import type { AppState, BarMode, Device, IslandAnchor, MeterkatApi, Pairing, ProviderCheck, UpdateChannel, View, WindowForecast } from "../ipc.js";
 
 declare global { interface Window { meterkat: MeterkatApi } }
 const api = window.meterkat;
@@ -32,6 +32,10 @@ let setupError: string | null = null;
 let setupAutostart = true;
 /** False from the first registration step until the wizard's last step is finished or skipped. */
 let setupDone = true;
+// Forecast view: the result and the snapshot it was made from
+let forecastData: WindowForecast[] | null = null;
+let forecastFor: number | null = null;
+let forecastError: string | null = null;
 // Settings
 let updateBusy = false;
 let settingsError: string | null = null;
@@ -147,6 +151,44 @@ function overview() {
     ? `<div class="banner small" role="alert" title="${esc(sync.error)}"><p class="error">${esc(syncProblem(sync.error, state.registration?.relay ?? null, snapshot?.generatedAt ?? null, now))}</p><span class="visually-hidden">Details: ${esc(sync.error)}</span></div>` : "";
   const footer = sync.mode === "service" ? `<p class="muted small gap">The CLI companion syncs in the background; this window shows its data. Settings can let the app take over.</p>` : "";
   return `<h2 class="visually-hidden">Your quota</h2>${error}${body}${footer}`;
+}
+
+// ---- Forecast -------------------------------------------------------------------------------------------------
+
+/** The "Used" / "Left" switch, also in Settings › Display. */
+const modeSwitch = () => segmented("Show quota as", (["used", "remaining"] as BarMode[]).map(m => radio(state.bars === m, `data-action="bar-mode" data-mode="${m}"`, m === "used" ? "Used" : "Left")).join(""));
+
+/** Where each current window is heading, learned from this computer's history: one card per provider, a row with chart per window. */
+function forecastView() {
+  const now = Date.now(), { shown } = providerGroups(state.snapshot);
+  const head = `<div class="section-head"><h2>Forecast</h2>${modeSwitch()}</div><p class="muted small fc-intro">Learned from the readings this computer has taken: when you usually use each quota and how busy you are right now. The history stays on this computer.</p>`;
+  if (forecastError) return `${head}<p class="banner error small" role="alert">${esc(forecastError)}</p>`;
+  if (forecastData === null) return `${head}<div class="empty"><span class="spinner"></span><p class="gap">Working out the forecast…</p></div>`;
+  const cards = shown.filter(p => bars(p).some(b => b.resetsAt > now)).map(p => {
+    const rows = !fresh(p, now) ? `<p class="muted small">No forecast from old readings.</p>` : forecastData!.filter(r => r.provider === p.id).map(r => {
+      const label = r.windowId === "fiveHour" ? "5-hour" : r.windowId === "weekly" ? "Weekly" : p.meters?.find(m => m.id === r.windowId)?.label ?? r.windowId;
+      if (!r.forecast) return `<div class="fc-row"><span class="quota-label">${esc(label)}</span><p class="muted small">No forecast yet: this computer needs a few readings of this quota first.</p></div>`;
+      const t = forecastText(r.forecast, state.bars, now);
+      return `<div class="fc-row ${t.tone}" role="group" aria-label="${esc(`${providerName(p.id)} ${label}: ${t.spoken}`)}">
+        <div class="quota"><span class="quota-label">${esc(label)}</span><span class="quota-value"><b>${percent(t.value)}</b> ${unitWord(state.bars)}</span></div>
+        <div class="fc-verdict${t.tone ? ` pace ${t.tone === "bad" ? "limit" : "fast"}` : ""}">${t.tone === "warn" ? `<span aria-hidden="true">▲ </span>` : ""}${esc(t.verdict)}</div>
+        ${t.range ? `<div class="muted small fc-range">${esc(t.range)}</div>` : ""}
+        ${forecastChart(r.forecast, r.actual, r.windowStart, state.bars)}
+        <div class="muted small fc-basis">${esc(t.basis)}</div>
+      </div>`;
+    }).join("");
+    return `<section class="card" data-provider="${esc(p.id)}" data-color="${esc(providerColor(p.id))}"><div class="card-head"><h3 class="provider">${providerMark(p.id)}${esc(providerName(p.id))}</h3></div>${rows}</section>`;
+  }).join("");
+  return head + (cards || `<p class="muted small">No current readings to forecast from.</p>`);
+}
+
+/** Asks the main process again when the snapshot changed since the last forecast. */
+async function loadForecast() {
+  const at = state.snapshot?.generatedAt ?? null;
+  if (forecastData !== null && forecastFor === at) return;
+  forecastFor = at;
+  try { forecastData = await api.forecast(); forecastError = null; } catch (error) { forecastError = message(error); }
+  if (view === "forecast") render();
 }
 
 // ---- Phones ---------------------------------------------------------------------------------------------------
@@ -315,7 +357,7 @@ function render() {
   const relayInput = document.querySelector<HTMLInputElement>("#relay-url")?.value;
   // The wizard keeps its actions at the bottom of the window.
   $("#view").classList.toggle("setup", inSetup);
-  $("#view").innerHTML = inSetup ? setupView() : view === "phones" ? phonesView() : view === "settings" ? settingsView() : overview();
+  $("#view").innerHTML = inSetup ? setupView() : view === "phones" ? phonesView() : view === "settings" ? settingsView() : view === "forecast" ? forecastView() : overview();
   hideDots($("#view"));
   // The CSP blocks style attributes; widths are set through the CSSOM instead.
   for (const fill of document.querySelectorAll<HTMLElement>(".fill[data-width]")) fill.style.width = `${fill.dataset.width}%`;
@@ -337,6 +379,7 @@ function navigate(next: View) {
   if (next !== "phones" && pairing) { pairing = null; void api.stopPairing(); }
   view = next; connected = false; settingsError = null;
   if (next === "phones") { phones = null; void loadPhones(); }
+  if (next === "forecast") void loadForecast();
   render();
 }
 
@@ -432,6 +475,7 @@ api.onState(next => {
   // Re-rendering would reset the relay field and the QR countdown; the setup and phones views update themselves.
   const inSetup = !state.registration || !setupDone;
   if (inSetup || view === "phones") renderStatus(); else render();
+  if (view === "forecast") void loadForecast();
 });
 // Sent when the window collapses into the tray, too: the main process has ended any pairing by then.
 api.onNavigate(next => {

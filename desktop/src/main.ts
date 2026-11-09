@@ -8,6 +8,7 @@ import QRCode from "qrcode";
 import { parseSnapshot, type Snapshot } from "../../shared/snapshot.js";
 import { defaultContext, remove as removeCliAutostart, status as cliAutostartStatus } from "../../src/autostart.js";
 import { collect } from "../../src/collect.js";
+import { forecasts, readHistory } from "../../src/history.js";
 import { detectProviders } from "../../src/providers.js";
 import { defaultRelay, migrateHostedRelay } from "../../src/registration.js";
 import { isV2, pairingLinkV2, uploadV2, writerCall, type V2Config } from "../../src/relay-v2.js";
@@ -403,6 +404,7 @@ function registerIpc() {
   handle(CHANNEL.detect, () => detectProviders(true));
   handle(CHANNEL.register, (relay: unknown) => register(typeof relay === "string" ? relay : null));
   handle(CHANNEL.sync, () => syncOnce());
+  handle(CHANNEL.forecast, () => { const data = snapshot(); return data ? forecasts(data, readHistory()) : []; });
   handle(CHANNEL.startPairing, () => startPairing());
   handle(CHANNEL.stopPairing, () => stopPairing());
   handle(CHANNEL.devices, () => devices());

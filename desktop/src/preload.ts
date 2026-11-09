@@ -16,6 +16,7 @@ const api: MeterkatApi = {
   detectProviders: () => invoke(CHANNEL.detect),
   register: relay => invoke(CHANNEL.register, relay),
   syncNow: () => invoke(CHANNEL.sync),
+  forecast: () => invoke(CHANNEL.forecast),
   startPairing: () => invoke(CHANNEL.startPairing),
   stopPairing: () => invoke(CHANNEL.stopPairing),
   devices: () => invoke(CHANNEL.devices),

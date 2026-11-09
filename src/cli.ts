@@ -5,7 +5,8 @@ import { existsSync, openSync, readFileSync, rmSync, statSync, writeFileSync } f
 import { uptime } from "node:os";
 import { join } from "node:path";
 import QRCode from "qrcode";
-import { captureClaude, type ProviderUsage } from "../shared/snapshot.js";
+import { captureClaude, type ProviderUsage, type Snapshot } from "../shared/snapshot.js";
+import { forecastLines, HISTORY_FILE, readHistory } from "./history.js";
 import { collect } from "./collect.js";
 import { defaultContext, install, launchEnvironment, remove, startBackground, status } from "./autostart.js";
 import { probeAntigravityUsage } from "./antigravity.js";
@@ -73,7 +74,7 @@ function spawnSyncSafe(file: string, args: string[]) {
 }
 function flag(args: string[], name: string) { const i = args.indexOf(name); if (i < 0) return undefined; const value = args[i + 1]; if (!value || value.startsWith("--")) throw new Error(`${name} needs a value`); return value; }
 const RELAY_TERMS = "The hosted relay (relay.meterkat.fdu.gg) is a separate free service under its terms of use: https://meterkat.fabian-duerkop.de/terms";
-const USAGE = "Commands: licenses, setup [--relay <origin>] [--dry-run] [--autostart|--no-autostart] [--no-open] [--force], version, update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease], register <relay> [--v1], capture-claude, inspect, probe-antigravity, pair [phone-relay-origin], once, run, background, revoke [device-id], devices, rotate-key [--yes], delete [--yes], autostart install|remove|status";
+const USAGE = "Commands: licenses, setup [--relay <origin>] [--dry-run] [--autostart|--no-autostart] [--no-open] [--force], version, update [check|status|enable|disable|rollback|channel [stable|beta]] [--prerelease], register <relay> [--v1], capture-claude, inspect, forecast, probe-antigravity, pair [phone-relay-origin], once, run, background, revoke [device-id], devices, rotate-key [--yes], delete [--yes], autostart install|remove|status";
 async function main() {
   const [command, argument] = process.argv.slice(2);
   if (!command || ["--help", "-h", "help"].includes(command) || process.argv.slice(3).some(a => a === "--help" || a === "-h")) { console.log(USAGE); return; }
@@ -148,6 +149,13 @@ async function main() {
     console.log(JSON.stringify(snapshot.providers.map(p => ({ provider: p.id, state: p.state, windows: Object.keys(p.windows), meters: (p.meters ?? []).length, sampleAvailable: p.sampledAt !== null })), null, 2));
     return;
   }
+  if (command === "forecast") {
+    // From the last snapshot and this computer's history; nothing is collected or sent.
+    const snapshot = readState<Snapshot>("snapshot.json");
+    if (!snapshot) throw new Error("No snapshot yet: run once or let the companion sync first");
+    for (const line of forecastLines(snapshot, readHistory())) console.log(line);
+    return;
+  }
   if (command === "probe-antigravity") {
     // Structure-only capability check for Antigravity; prints no quota values and sends nothing to the relay.
     console.log(JSON.stringify(await probeAntigravityUsage(), null, 2)); return;
@@ -209,7 +217,7 @@ async function main() {
     if (!isV2(config)) throw new Error("Use the operator route to delete protocol v1 sources (docs/relay-lifecycle.md)");
     await confirmDestructive(command, process.argv.slice(3), terminalConfirmIo());
     const result = await writerCall(config, "/v2/source", "DELETE");
-    for (const name of ["config.json", "snapshot.json", "pairing.html"]) removeState(name);
+    for (const name of ["config.json", "snapshot.json", "pairing.html", HISTORY_FILE]) removeState(name);
     console.log(`Relay source deleted (${result.devices} phone(s) revoked). Local credentials and key removed.`); return;
   }
   if (command === "once" || command === "run") {
