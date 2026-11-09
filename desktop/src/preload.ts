@@ -19,6 +19,7 @@ const api: MeterkatApi = {
   forecast: () => invoke(CHANNEL.forecast),
   startPairing: () => invoke(CHANNEL.startPairing),
   stopPairing: () => invoke(CHANNEL.stopPairing),
+  copyPairingLink: () => invoke(CHANNEL.copyPairingLink),
   devices: () => invoke(CHANNEL.devices),
   revokeDevice: id => invoke(CHANNEL.revoke, id),
   revokeAll: () => invoke(CHANNEL.revokeAll),

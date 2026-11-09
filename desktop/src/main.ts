@@ -1,6 +1,6 @@
 // Meterkat desktop: the companion as a tray app. The window collapses into the tray on close or minimise; the
 // tray menu reopens it, syncs, pairs a phone or quits. Syncing, pairing and the relay calls reuse the CLI modules.
-import { app, BrowserWindow, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeImage, nativeTheme, Notification, shell, Tray, type IpcMainInvokeEvent, type MenuItemConstructorOptions } from "electron";
 import { homedir, uptime } from "node:os";
 import { join } from "node:path";
 import { Worker } from "node:worker_threads";
@@ -45,6 +45,8 @@ let tray: Tray | null = null;
 let quitting = false;
 let syncTimer: NodeJS.Timeout | null = null;
 let pairingTimer: NodeJS.Timeout | null = null;
+/** The current pairing link; it holds the source key, so the renderer never gets it and it lives only while pairing. */
+let pairingLink: string | null = null;
 let island: ReturnType<typeof createIsland> | null = null;
 const settings = () => readState<DesktopSettings>("desktop.json") ?? {};
 const saveSettings = (patch: DesktopSettings) => writeState("desktop.json", { ...settings(), ...patch });
@@ -279,11 +281,22 @@ async function startPairing(): Promise<Pairing> {
   win?.setContentProtection(true);
   if (pairingTimer) clearTimeout(pairingTimer);
   pairingTimer = setTimeout(stopPairing, until - Date.now());
+  pairingLink = link;
   return { qr, expiresAt: until };
+}
+
+/** For phones that can't scan the QR: the link goes to the clipboard and is pasted in the app. */
+async function copyPairingLink() {
+  if (!pairingLink) throw new Error("No pairing code is shown");
+  await clipboard.writeText(pairingLink);
 }
 
 function stopPairing() {
   if (pairingTimer) { clearTimeout(pairingTimer); pairingTimer = null; }
+  // A copied link must not outlive the pairing; anything copied since stays.
+  const link = pairingLink;
+  pairingLink = null;
+  if (link) void clipboard.readText().then(text => { if (text === link) clipboard.clear(); }).catch(() => { /* clipboard unavailable */ });
   if (win && !win.isDestroyed()) win.setContentProtection(false);
 }
 
@@ -407,6 +420,7 @@ function registerIpc() {
   handle(CHANNEL.forecast, () => { const data = snapshot(); return data ? forecasts(data, readHistory()) : []; });
   handle(CHANNEL.startPairing, () => startPairing());
   handle(CHANNEL.stopPairing, () => stopPairing());
+  handle(CHANNEL.copyPairingLink, () => copyPairingLink());
   handle(CHANNEL.devices, () => devices());
   handle(CHANNEL.revoke, (id: unknown) => revokeDevice(String(id)));
   handle(CHANNEL.revokeAll, () => revokeAll());

@@ -52,6 +52,8 @@ export interface MeterkatApi {
   forecast(): Promise<WindowForecast[]>;
   startPairing(): Promise<Pairing>;
   stopPairing(): Promise<void>;
+  /** Copies the shown pairing link to the clipboard; the main process clears it again when pairing ends. */
+  copyPairingLink(): Promise<void>;
   devices(): Promise<Device[]>;
   revokeDevice(id: string): Promise<void>;
   /** Asks for confirmation in a native dialog; resolves false when cancelled. */
@@ -78,7 +80,7 @@ export interface MeterkatApi {
 export const CHANNEL = {
   state: "meterkat:state", stateChanged: "meterkat:state-changed", navigate: "meterkat:navigate",
   detect: "meterkat:detect", register: "meterkat:register", sync: "meterkat:sync", forecast: "meterkat:forecast",
-  startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop",
+  startPairing: "meterkat:pair-start", stopPairing: "meterkat:pair-stop", copyPairingLink: "meterkat:pair-copy",
   devices: "meterkat:devices", revoke: "meterkat:revoke", revokeAll: "meterkat:revoke-all",
   autostart: "meterkat:autostart", island: "meterkat:island-enabled", islandAnchor: "meterkat:island-anchor", barMode: "meterkat:bar-mode", dismissKey: "meterkat:dismiss-key", takeOver: "meterkat:take-over", checkUpdate: "meterkat:check-update",
   installUpdate: "meterkat:install-update", automaticUpdates: "meterkat:automatic-updates", updateChannel: "meterkat:update-channel",
